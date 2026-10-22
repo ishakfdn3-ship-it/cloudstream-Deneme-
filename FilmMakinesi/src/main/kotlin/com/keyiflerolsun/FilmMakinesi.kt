@@ -88,7 +88,7 @@ class FilmMakinesi : MainAPI() {
         val poster          = fixUrlNull(document.selectFirst("[property='og:image']")?.attr("content"))
         val description     = document.select("section#film_single article p").last()?.text()?.trim()
         val tags            = document.selectFirst("dt:contains(Tür:) + dd")?.text()?.split(", ")
-        val rating          = document.selectFirst("dt:contains(IMDB Puanı:) + dd")?.text()?.trim()?.toRatingInt()
+      //  val rating          = document.selectFirst("dt:contains(IMDB Puanı:) + dd")?.text()?.trim()?.toRatingInt()
         val year            = document.selectFirst("dt:contains(Yapım Yılı:) + dd")?.text()?.trim()?.toIntOrNull()
 
         val durationElement = document.select("dt:contains(Film Süresi:) + dd time").attr("datetime")
@@ -111,7 +111,7 @@ class FilmMakinesi : MainAPI() {
             this.year            = year
             this.plot            = description
             this.tags            = tags
-            this.rating          = rating
+         //   this.rating          = rating
             this.duration        = duration
             this.recommendations = recommendations
             addActors(actors)
@@ -120,7 +120,7 @@ class FilmMakinesi : MainAPI() {
     }
 
 
-    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
+    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (newExtractorLink) -> Unit): Boolean {
         Log.d("FLMM", "data » $data")
         val document      = app.get(data).document
         val iframeElement = document.selectFirst("div.player-div iframe")
