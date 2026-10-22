@@ -121,7 +121,7 @@ class IzleAI : MainAPI() {
         val year        = document.selectFirst("a[href*='/yil/']")?.text()?.toIntOrNull()
         val description = document.selectFirst("div.mv-det-p")?.text()?.trim() ?: document.selectFirst("div.w-full div.text-base")?.text()?.trim()
         val tags        = document.select("[href*='kategori']").map { it.text() }
-        val rating      = document.selectFirst("a[href*='imdb.com'] span.font-bold")?.text()?.trim().toRatingInt()
+       // val rating      = document.selectFirst("a[href*='imdb.com'] span.font-bold")?.text()?.trim().toRatingInt()
         val duration    = document.selectXpath("//span[contains(text(), ' dk.')]").text().trim().split(" ").first().toIntOrNull()
         val trailer     = document.selectFirst("iframe[data-src*='youtube.com/embed/']")?.attr("data-src")
         val actors      = document.select("div.flex.overflow-auto [href*='oyuncu']").map {
@@ -133,14 +133,14 @@ class IzleAI : MainAPI() {
             this.year      = year
             this.plot      = description
             this.tags      = tags
-            this.rating    = rating
+           // this.rating    = rating
             this.duration  = duration
             addTrailer(trailer)
             addActors(actors)
         }
     }
 
-    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
+    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (newExtractorLink) -> Unit): Boolean {
         Log.d("IAI", "data » $data")
         val document = app.get(data).document
         val iframe   = fixUrlNull(document.selectFirst("div.player iframe")?.attr("src")) ?: return false
