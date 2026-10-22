@@ -119,7 +119,7 @@ class Dizilla : MainAPI() {
         val year        = document.selectXpath("//span[text()='Yayın tarihi']//following-sibling::span").text().trim().split(" ").last().toIntOrNull()
         val description = document.selectFirst("div.mv-det-p")?.text()?.trim() ?: document.selectFirst("div.w-full div.text-base")?.text()?.trim()
         val tags        = document.select("[href*='dizi-turu']").map { it.text() }
-        val rating      = document.selectFirst("a[href*='imdb.com'] span")?.text()?.trim().toRatingInt()
+        //val rating      = document.selectFirst("a[href*='imdb.com'] span")?.text()?.trim().toRatingInt()
         val duration    = Regex("(\\d+)").find(document.select("div.gap-3 span.text-sm")[1].text())?.value?.toIntOrNull()
         val actors      = document.select("[href*='oyuncu']").map {
             Actor(it.text())
@@ -175,7 +175,7 @@ class Dizilla : MainAPI() {
             this.year      = year
             this.plot      = description
             this.tags      = tags
-            this.rating    = rating
+          //  this.rating    = rating
             this.duration  = duration
             addActors(actors)
         }
