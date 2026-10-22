@@ -90,7 +90,7 @@ class SuperFilmGeldi : MainAPI() {
         val year            = document.selectFirst("div.release a")?.text()?.toIntOrNull()
         val description     = document.selectFirst("div.excerpt p")?.text()?.trim()
         val tags            = document.select("div.categories a").map { it.text() }
-        val rating          = document.selectFirst("span.imdb-rating")?.text()?.trim()?.split(" ")?.first()?.toRatingInt()
+      //  val rating          = document.selectFirst("span.imdb-rating")?.text()?.trim()?.split(" ")?.first()?.toRatingInt()
         val recommendations = document.select("div.film-content div.existing_item").mapNotNull { it.toSearchResult() }
         val actors          = document.select("div.actor a").map {
             Actor(it.text())
@@ -101,13 +101,13 @@ class SuperFilmGeldi : MainAPI() {
             this.year            = year
             this.plot            = description
             this.tags            = tags
-            this.rating          = rating
+      //      this.rating          = rating
             this.recommendations = recommendations
             addActors(actors)
         }
     }
 
-    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
+    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (newExtractorLink) -> Unit): Boolean {
         Log.d("SFG", "data » $data")
         val document = app.get(data).document
         val iframe   = fixUrlNull(document.selectFirst("div#vast iframe")?.attr("src")) ?: return false
