@@ -87,7 +87,7 @@ class HDFilmCehennemi : MainAPI() {
         val year        = document.selectFirst("div.post-info-year-country a")?.text()?.trim()?.toIntOrNull()
         val tvType      = if (document.select("div.seasons").isEmpty()) TvType.Movie else TvType.TvSeries
         val description = document.selectFirst("article.post-info-content > p")?.text()?.trim()
-        val rating      = document.selectFirst("div.post-info-imdb-rating span")?.text()?.substringBefore("(")?.trim()?.toRatingInt()
+       // val rating      = document.selectFirst("div.post-info-imdb-rating span")?.text()?.substringBefore("(")?.trim()?.toRatingInt()
         val actors      = document.select("div.post-info-cast a").map {
             Actor(it.selectFirst("strong")!!.text(), it.select("img").attr("data-src"))
         }
@@ -122,7 +122,7 @@ class HDFilmCehennemi : MainAPI() {
                 this.year            = year
                 this.plot            = description
                 this.tags            = tags
-                this.rating          = rating
+           //     this.rating          = rating
                 this.recommendations = recommendations
                 addActors(actors)
                 addTrailer(trailer)
@@ -135,7 +135,7 @@ class HDFilmCehennemi : MainAPI() {
                 this.year            = year
                 this.plot            = description
                 this.tags            = tags
-                this.rating          = rating
+           //     this.rating          = rating
                 this.recommendations = recommendations
                 addActors(actors)
                 addTrailer(trailer)
@@ -143,7 +143,7 @@ class HDFilmCehennemi : MainAPI() {
         }
     }
 
-    private suspend fun invokeLocalSource(source: String, url: String, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit ) {
+    private suspend fun invokeLocalSource(source: String, url: String, subtitleCallback: (SubtitleFile) -> Unit, callback: (newExtractorLink) -> Unit ) {
         val script    = app.get(url, referer = "${mainUrl}/").document.select("script").find { it.data().contains("sources:") }?.data() ?: return
         val videoData = getAndUnpack(script).substringAfter("file_link=\"").substringBefore("\";")
         val subData   = script.substringAfter("tracks: [").substringBefore("]")
