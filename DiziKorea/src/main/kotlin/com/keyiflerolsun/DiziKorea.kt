@@ -131,7 +131,7 @@ class DiziKorea : MainAPI() {
         }
     }
 
-    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
+    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (newExtractorLink) -> Unit): Boolean {
         Log.d("DZK", "data » $data")
         val document = app.get(data).document
 
