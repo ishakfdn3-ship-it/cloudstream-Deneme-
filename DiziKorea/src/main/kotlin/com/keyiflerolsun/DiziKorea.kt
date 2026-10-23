@@ -83,7 +83,7 @@ class DiziKorea : MainAPI() {
         val year        = document.selectFirst("h1 span")?.text()?.substringAfter("(")?.substringBefore(")")?.toIntOrNull()
         val description = document.selectFirst("div.series-profile-summary p")?.text()?.trim()
         val tags        = document.select("div.series-profile-type a").mapNotNull { it.text().trim() }
-       // val rating      = document.selectFirst("span.color-imdb")?.text()?.trim()?.toRatingInt()
+        // val rating      = document.selectFirst("span.color-imdb")?.text()?.trim()?.toRatingInt()
         val duration    = document.selectXpath("//span[text()='Süre']//following-sibling::p").text().trim().split(" ").first().toIntOrNull()
         val trailer     = document.selectFirst("div.series-profile-trailer")?.attr("data-yt")
         val actors      = document.select("div.series-profile-cast li").map {
@@ -112,7 +112,7 @@ class DiziKorea : MainAPI() {
                 this.year      = year
                 this.plot      = description
                 this.tags      = tags
-               // this.rating    = rating
+                // this.rating    = rating
                 this.duration  = duration
                 addActors(actors)
                 addTrailer("https://www.youtube.com/embed/${trailer}")
@@ -123,7 +123,7 @@ class DiziKorea : MainAPI() {
                 this.year      = year
                 this.plot      = description
                 this.tags      = tags
-                //this.rating    = rating
+                // this.rating    = rating
                 this.duration  = duration
                 addActors(actors)
                 addTrailer("https://www.youtube.com/embed/${trailer}")
@@ -131,10 +131,9 @@ class DiziKorea : MainAPI() {
         }
     }
 
-    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (newExtractorLink) -> Unit): Boolean {
+    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
         Log.d("DZK", "data » $data")
         val document = app.get(data).document
-
 
         document.select("div.series-watch-alternatives button").forEach {
             val iframe = fixUrlNull(it.attr("data-hhs")) ?: return@forEach
