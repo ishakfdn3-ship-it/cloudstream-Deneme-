@@ -1,4 +1,4 @@
-// ! Bu araç @keyiflerolsun tarafından | @KekikAkademi için yazılmıştır.
+// ! This tool was written by @keyiflerolsun | @KekikAkademi
 
 package com.keyiflerolsun
 
@@ -104,13 +104,13 @@ class AnimeciX : MainAPI() {
             this.year      = response.title.year
             this.plot      = response.title.description
             this.tags      = response.title.tags.map { it.name }
-            this.rating    = response.title.rating.toRatingInt()
+            // this.rating    = response.title.rating.toRatingInt()
             addActors(response.title.actors.map { Actor(it.name, fixUrlNull(it.poster)) })
             addTrailer(response.title.trailer)
         }
     }
 
-    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (newExtractorLink) -> Unit): Boolean {
+    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
         Log.d("ACX", "data » $data")
         val iframeLink = app.get("${mainUrl}/${data}", referer="${mainUrl}/").url
         Log.d("ACX", "iframeLink » $iframeLink")
