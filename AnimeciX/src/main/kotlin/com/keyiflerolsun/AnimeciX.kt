@@ -1,4 +1,4 @@
-// ! This tool was written by @keyiflerolsun | @KekikAkademi
+// ! Bu araç @keyiflerolsun tarafından | @KekikAkademi için yazılmıştır.
 
 package com.keyiflerolsun
 
