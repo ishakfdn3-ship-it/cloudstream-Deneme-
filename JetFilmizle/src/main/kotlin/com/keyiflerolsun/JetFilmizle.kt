@@ -50,10 +50,11 @@ class JetFilmizle : MainAPI() {
         val href = fixUrlNull(this.selectFirst("a")?.attr("href"))
             ?: return null
 
-        var posterUrl = fixUrlNull(this.selectFirst("img")?.attr("data-src"))
-        if (posterUrl == null) {
-            posterUrl = fixUrlNull(this.selectFirst("img")?.attr("src"))
-        }
+        val posterUrl = fixUrlNull(
+            this.selectFirst("img")?.attr("data-src")
+        ) ?: fixUrlNull(
+            this.selectFirst("img")?.attr("src")
+        )
 
         return newMovieSearchResponse(title, href, TvType.Movie) {
             this.posterUrl = posterUrl
@@ -79,11 +80,9 @@ class JetFilmizle : MainAPI() {
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
 
-        val title = document.selectFirst("section.movie-exp div.movie-exp-title")
-            ?.text()
-            ?.substringBefore(" izle")
-            ?.trim()
-            ?: return null
+        val title = document.selectFirst(
+            "section.movie-exp div.movie-exp-title"
+        )?.text()?.substringBefore(" izle")?.trim() ?: return null
 
         val poster = fixUrlNull(
             document.selectFirst("section.movie-exp img")?.attr("data-src")
@@ -101,58 +100,65 @@ class JetFilmizle : MainAPI() {
             ?.get(1)
             ?.toIntOrNull()
 
-        val description = document.selectFirst("section.movie-exp p.aciklama")
-            ?.text()
-            ?.trim()
+        val description = document.selectFirst(
+            "section.movie-exp p.aciklama"
+        )?.text()?.trim()
 
         val tags = document.select("section.movie-exp div.catss a")
             .map { it.text() }
 
-        // Puanı eski toRatingInt() API'sini kullanmadan oku.
-        val score = document.selectFirst("section.movie-exp div.imdb_puan span")
-            ?.text()
-            ?.let { text ->
-                Regex("""(\d+(?:[.,]\d+)?)""")
-                    .find(text)
-                    ?.groupValues
-                    ?.get(1)
-                    ?.replace(',', '.')
-                    ?.toFloatOrNull()
-                    ?.let { value ->
-                        (value * 10).toInt().coerceIn(0, 100)
-                    }
-            }
-
-        val actors = document.select("section.movie-exp div.oyuncu").mapNotNull {
-            val actorName = it.selectFirst("div.name")?.text() ?: return@mapNotNull null
-            val actorPoster = fixUrlNull(
-                it.selectFirst("img")?.attr("data-src")
-            )
-
-            Actor(actorName, actorPoster)
+        val score = document.selectFirst(
+            "section.movie-exp div.imdb_puan span"
+        )?.text()?.let { text ->
+            Regex("""(\d+(?:[.,]\d+)?)""")
+                .find(text)
+                ?.groupValues
+                ?.get(1)
+                ?.replace(',', '.')
+                ?.toFloatOrNull()
+                ?.takeIf { it in 0f..10f }
+                ?.let { Score.from10(it) }
         }
 
-        val recommendations = document.select("div#benzers article").mapNotNull {
-            var recName = it.selectFirst("h2 a")?.text()
-                ?: it.selectFirst("h3 a")?.text()
-                ?: it.selectFirst("h4 a")?.text()
-                ?: it.selectFirst("h5 a")?.text()
-                ?: it.selectFirst("h6 a")?.text()
-                ?: return@mapNotNull null
+        val actors = document.select("section.movie-exp div.oyuncu")
+            .mapNotNull {
+                val actorName = it.selectFirst("div.name")?.text()
+                    ?: return@mapNotNull null
 
-            recName = recName.substringBefore(" izle")
+                val actorPoster = fixUrlNull(
+                    it.selectFirst("img")?.attr("data-src")
+                )
 
-            val recHref = fixUrlNull(it.selectFirst("a")?.attr("href"))
-                ?: return@mapNotNull null
-
-            val recPosterUrl = fixUrlNull(
-                it.selectFirst("img")?.attr("data-src")
-            )
-
-            newMovieSearchResponse(recName, recHref, TvType.Movie) {
-                this.posterUrl = recPosterUrl
+                Actor(actorName, actorPoster)
             }
-        }
+
+        val recommendations = document.select("div#benzers article")
+            .mapNotNull {
+                var recName = it.selectFirst("h2 a")?.text()
+                    ?: it.selectFirst("h3 a")?.text()
+                    ?: it.selectFirst("h4 a")?.text()
+                    ?: it.selectFirst("h5 a")?.text()
+                    ?: it.selectFirst("h6 a")?.text()
+                    ?: return@mapNotNull null
+
+                recName = recName.substringBefore(" izle")
+
+                val recHref = fixUrlNull(
+                    it.selectFirst("a")?.attr("href")
+                ) ?: return@mapNotNull null
+
+                val recPosterUrl = fixUrlNull(
+                    it.selectFirst("img")?.attr("data-src")
+                )
+
+                newMovieSearchResponse(
+                    recName,
+                    recHref,
+                    TvType.Movie
+                ) {
+                    this.posterUrl = recPosterUrl
+                }
+            }
 
         return newMovieLoadResponse(title, url, TvType.Movie, url) {
             this.posterUrl = poster
@@ -198,7 +204,9 @@ class JetFilmizle : MainAPI() {
                 return@forEach
             }
 
-            val partUrl = fixUrlNull(it.attr("href")) ?: return@forEach
+            val partUrl = fixUrlNull(it.attr("href"))
+                ?: return@forEach
+
             val movDoc = app.get(partUrl).document
 
             val iframe = fixUrlNull(
@@ -233,9 +241,19 @@ class JetFilmizle : MainAPI() {
                 ) ?: continue
 
                 Log.d("JTF", "jetvIframe » $jetvIframe")
-                loadExtractor(jetvIframe, "${mainUrl}/", subtitleCallback, callback)
+                loadExtractor(
+                    jetvIframe,
+                    "${mainUrl}/",
+                    subtitleCallback,
+                    callback
+                )
             } else {
-                loadExtractor(iframe, "${mainUrl}/", subtitleCallback, callback)
+                loadExtractor(
+                    iframe,
+                    "${mainUrl}/",
+                    subtitleCallback,
+                    callback
+                )
             }
         }
 
