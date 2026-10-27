@@ -6,19 +6,13 @@ buildscript {
     repositories {
         google()
         mavenCentral()
-
-        maven {
-            url = uri("https://jitpack.io")
-            metadataSources {
-                artifact()
-            }
-        }
+        maven("https://jitpack.io")
     }
 
     dependencies {
         classpath("com.android.tools.build:gradle:8.7.3")
-        classpath("com.github.recloudstream:gradle:master-81b1d424d2-1")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.0")
+        classpath("com.github.recloudstream:gradle:-SNAPSHOT")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.0")
     }
 }
 
@@ -32,15 +26,19 @@ allprojects {
 
 fun Project.cloudstream(
     configuration: CloudstreamExtension.() -> Unit
-) = extensions
-    .getByName<CloudstreamExtension>("cloudstream")
-    .configuration()
+) {
+    extensions
+        .getByName<CloudstreamExtension>("cloudstream")
+        .configuration()
+}
 
 fun Project.android(
     configuration: BaseExtension.() -> Unit
-) = extensions
-    .getByName<BaseExtension>("android")
-    .configuration()
+) {
+    extensions
+        .getByName<BaseExtension>("android")
+        .configuration()
+}
 
 subprojects {
     apply(plugin = "com.android.library")
@@ -74,6 +72,7 @@ subprojects {
                 jvmTarget.set(
                     org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11
                 )
+
                 freeCompilerArgs.addAll(
                     listOf(
                         "-Xno-call-assertions",
