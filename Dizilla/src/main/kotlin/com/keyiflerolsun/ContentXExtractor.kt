@@ -19,6 +19,7 @@ open class ContentX : ExtractorApi() {
         callback: (ExtractorLink) -> Unit
     ) {
         val extRef = referer ?: ""
+
         Log.d("Kekik_${this.name}", "url » $url")
 
         val iSource = app.get(url, referer = extRef).text
@@ -62,8 +63,7 @@ open class ContentX : ExtractorApi() {
                 source = name,
                 name = name,
                 url = vidExtract.replace("\\", ""),
-                type = ExtractorLinkType.M3U8,
-                referer = url
+                type = ExtractorLinkType.M3U8
             )
         )
 
@@ -85,8 +85,7 @@ open class ContentX : ExtractorApi() {
                     source = "$name Türkçe Dublaj",
                     name = "$name Türkçe Dublaj",
                     url = dublajExtract.replace("\\", ""),
-                    type = ExtractorLinkType.M3U8,
-                    referer = url
+                    type = ExtractorLinkType.M3U8
                 )
             )
         }
