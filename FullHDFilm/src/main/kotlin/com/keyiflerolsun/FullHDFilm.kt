@@ -1,4 +1,4 @@
-// ! Bu araç @keyiflerolsun tarafından | @KekikAkademi için yazılmıştır.
+ // ! Bu araç @keyiflerolsun tarafından | @KekikAkademi için yazılmıştır.
 
 package com.keyiflerolsun
 
@@ -213,23 +213,12 @@ class FullHDFilm : MainAPI() {
 
             Log.d("FHDF", "iframeLink » $iframeLink")
 
-            // Suspend fonksiyonu doğrudan coroutine içindeki döngüden çağrılır.
             loadExtractor(
                 iframeLink,
                 "${mainUrl}/",
-                subtitleCallback
-            ) { extractor ->
-                callback.invoke(
-                    newExtractorLink(
-                        source = "$partName - ${extractor.source}",
-                        name = "$partName - ${extractor.name}",
-                        url = extractor.url,
-                        type = extractor.type
-                    ) {
-                        this.quality = extractor.quality
-                    }
-                )
-            }
+                subtitleCallback,
+                callback
+            )
         }
 
         return true
