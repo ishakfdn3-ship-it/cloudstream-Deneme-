@@ -46,7 +46,9 @@ class FullHDFilm : MainAPI() {
         request: MainPageRequest
     ): HomePageResponse {
         val document = app.get("${request.data}/${page}/").document
-        val home = document.select("div.movie_box").mapNotNull { it.toMainPageResult() }
+        val home = document.select("div.movie_box").mapNotNull {
+            it.toMainPageResult()
+        }
 
         return newHomePageResponse(request.name, home)
     }
@@ -63,7 +65,9 @@ class FullHDFilm : MainAPI() {
 
     override suspend fun search(query: String): List<SearchResponse> {
         val document = app.get("${mainUrl}/arama/?s=${query}").document
-        return document.select("div.movie_box").mapNotNull { it.toMainPageResult() }
+        return document.select("div.movie_box").mapNotNull {
+            it.toMainPageResult()
+        }
     }
 
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
@@ -72,7 +76,9 @@ class FullHDFilm : MainAPI() {
         val document = app.get(url).document
 
         val title = document.selectFirst("h1 span")?.text()?.trim() ?: return null
-        val poster = fixUrlNull(document.selectFirst("[property='og:image']")?.attr("content"))
+        val poster = fixUrlNull(
+            document.selectFirst("[property='og:image']")?.attr("content")
+        )
         val description = document.selectFirst("div[itemprop='description']")
             ?.text()
             ?.substringAfter("⭐")
@@ -81,11 +87,15 @@ class FullHDFilm : MainAPI() {
             ?.trim()
         val year = document.selectFirst("span[itemprop='dateCreated'] a")
             ?.text()?.trim()?.toIntOrNull()
-        val tags = document.select("div.detail ul.bottom li:nth-child(5) span a").map { it.text() }
+        val tags = document.select("div.detail ul.bottom li:nth-child(5) span a")
+            .map { it.text() }
         val duration = document.selectFirst("span[itemprop='duration']")
             ?.text()?.split(" ")?.first()?.trim()?.toIntOrNull()
-        val actors = document.select("sc[itemprop='actor'] span").map { Actor(it.text()) }
-        val trailer = fixUrlNull(document.selectFirst("[property='og:video']")?.attr("content"))
+        val actors = document.select("sc[itemprop='actor'] span")
+            .map { Actor(it.text()) }
+        val trailer = fixUrlNull(
+            document.selectFirst("[property='og:video']")?.attr("content")
+        )
 
         if (url.contains("-dizi") || tags.any { it.lowercase().contains("dizi") }) {
             val episodes = mutableListOf<Episode>()
@@ -98,21 +108,30 @@ class FullHDFilm : MainAPI() {
                 .map { it.destructured }
                 .toList()
 
-            partNumbers.forEachIndexed { index, partNumber ->
-                val partName = partNames.getOrNull(index) ?: return@forEachIndexed
-                val value = pdataList.getOrNull(index)?.component2() ?: return@forEachIndexed
+            for (index in partNumbers.indices) {
+                val partNumber = partNumbers[index]
+                val partName = partNames.getOrNull(index) ?: continue
+                val value = pdataList.getOrNull(index)?.component2() ?: continue
 
                 if (
                     partName.lowercase().contains("fragman") ||
                     partNumber.lowercase().contains("fragman")
-                ) return@forEachIndexed
+                ) {
+                    continue
+                }
 
                 val iframeData = iframeSkici.iframeCoz(value)
-                val iframeLink = app.get(iframeData, referer = "${mainUrl}/").url
+                val iframeLink = app.get(
+                    iframeData,
+                    referer = "${mainUrl}/"
+                ).url
 
                 val szNum = partNumber.takeIf { it.contains("sezon") }
-                    ?.substringBefore("sezon")?.toIntOrNull() ?: 1
-                val epNum = partName.substringBefore(".").trim().toIntOrNull() ?: 1
+                    ?.substringBefore("sezon")
+                    ?.toIntOrNull() ?: 1
+                val epNum = partName.substringBefore(".")
+                    .trim()
+                    .toIntOrNull() ?: 1
 
                 episodes.add(newEpisode(iframeLink) {
                     this.name = "${szNum}. Sezon ${epNum}. Bölüm"
@@ -121,7 +140,12 @@ class FullHDFilm : MainAPI() {
                 })
             }
 
-            return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
+            return newTvSeriesLoadResponse(
+                title,
+                url,
+                TvType.TvSeries,
+                episodes
+            ) {
                 this.posterUrl = poster
                 this.plot = description
                 this.year = year
@@ -174,16 +198,27 @@ class FullHDFilm : MainAPI() {
             if (
                 partName.lowercase().contains("fragman") ||
                 partNumber.lowercase().contains("fragman")
-            ) continue
+            ) {
+                continue
+            }
 
             Log.d("FHDF", "partNumber » $partNumber")
             Log.d("FHDF", "partName » $partName")
 
             val iframeData = iframeSkici.iframeCoz(value)
-            val iframeLink = app.get(iframeData, referer = "${mainUrl}/").url
+            val iframeLink = app.get(
+                iframeData,
+                referer = "${mainUrl}/"
+            ).url
+
             Log.d("FHDF", "iframeLink » $iframeLink")
 
-            loadExtractor(iframeLink, "${mainUrl}/", subtitleCallback) { extractor ->
+            // Suspend fonksiyonu doğrudan coroutine içindeki döngüden çağrılır.
+            loadExtractor(
+                iframeLink,
+                "${mainUrl}/",
+                subtitleCallback
+            ) { extractor ->
                 callback.invoke(
                     newExtractorLink(
                         source = "$partName - ${extractor.source}",
