@@ -11,8 +11,7 @@ buildscript {
     dependencies {
         classpath("com.android.tools.build:gradle:8.7.3")
         classpath("com.github.recloudstream:gradle:master-SNAPSHOT")
-        // CloudStream eklentileriyle en stabil çalışan Kotlin sürümüne güncellendi
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.21")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0")
     }
 }
 
@@ -34,15 +33,11 @@ subprojects {
     apply(plugin = "com.lagradost.cloudstream3.gradle")
 
     cloudstream {
-        // Repo linkin isodmf olarak ayarlandı:
         setRepo(System.getenv("GITHUB_REPOSITORY") ?: "https://github.com/ishakfdn3-ship-it/isodmf")
-        
-        // Yazar adını senin isminle değiştirdik:
         authors = listOf("İshak")
     }
 
     android {
-        // Paket adını repona göre ayarladık:
         namespace = "com.isodmf"
 
         defaultConfig {
@@ -76,12 +71,12 @@ subprojects {
 
         cloudstream("com.lagradost:cloudstream3:pre-release")
 
-        implementation(kotlin("stdlib"))                                              
-        implementation("com.github.Blatzar:NiceHttp:0.4.11")                          
-        implementation("org.jsoup:jsoup:1.18.3")                                      
-        implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.16.0")   
-        implementation("com.fasterxml.jackson.core:jackson-databind:2.16.0")          
-        implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1")      
+        implementation(kotlin("stdlib"))
+        implementation("com.github.Blatzar:NiceHttp:0.4.11")
+        implementation("org.jsoup:jsoup:1.18.3")
+        implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.16.0")
+        implementation("com.fasterxml.jackson.core:jackson-databind:2.16.0")
+        implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1")
     }
 }
 
