@@ -1,5 +1,4 @@
-
- // ! Bu araç @keyiflerolsun tarafından | @KekikAkademi için yazılmıştır.
+// ! Bu araç @keyiflerolsun tarafından | @KekikAkademi için yazılmıştır.
 
 package com.keyiflerolsun
 
@@ -103,7 +102,8 @@ class FullHDFilm : MainAPI() {
                 val partName = partNames.getOrNull(index) ?: return@forEachIndexed
                 val value = pdataList.getOrNull(index)?.component2() ?: return@forEachIndexed
 
-                if (partName.lowercase().contains("fragman") ||
+                if (
+                    partName.lowercase().contains("fragman") ||
                     partNumber.lowercase().contains("fragman")
                 ) return@forEachIndexed
 
@@ -166,13 +166,15 @@ class FullHDFilm : MainAPI() {
             .map { it.destructured }
             .toList()
 
-        partNumbers.forEachIndexed { index, partNumber ->
-            val partName = partNames.getOrNull(index) ?: return@forEachIndexed
-            val value = pdataList.getOrNull(index)?.component2() ?: return@forEachIndexed
+        for (index in partNumbers.indices) {
+            val partNumber = partNumbers[index]
+            val partName = partNames.getOrNull(index) ?: continue
+            val value = pdataList.getOrNull(index)?.component2() ?: continue
 
-            if (partName.lowercase().contains("fragman") ||
+            if (
+                partName.lowercase().contains("fragman") ||
                 partNumber.lowercase().contains("fragman")
-            ) return@forEachIndexed
+            ) continue
 
             Log.d("FHDF", "partNumber » $partNumber")
             Log.d("FHDF", "partName » $partName")
@@ -189,7 +191,6 @@ class FullHDFilm : MainAPI() {
                         url = extractor.url,
                         type = extractor.type
                     ) {
-                        this.referer = extractor.referer
                         this.quality = extractor.quality
                     }
                 )
