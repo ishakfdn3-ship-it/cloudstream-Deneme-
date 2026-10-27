@@ -1,3 +1,4 @@
+
 import com.lagradost.cloudstream3.gradle.CloudstreamExtension
 import com.android.build.gradle.BaseExtension
 
@@ -5,12 +6,18 @@ buildscript {
     repositories {
         google()
         mavenCentral()
-        maven("https://jitpack.io")
+
+        maven {
+            url = uri("https://jitpack.io")
+            metadataSources {
+                artifact()
+            }
+        }
     }
 
     dependencies {
         classpath("com.android.tools.build:gradle:8.7.3")
-        classpath("com.github.recloudstream:gradle:master-SNAPSHOT")
+        classpath("com.github.recloudstream:gradle:master-81b1d424d2-1")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.0")
     }
 }
@@ -23,9 +30,17 @@ allprojects {
     }
 }
 
-fun Project.cloudstream(configuration: CloudstreamExtension.() -> Unit) = extensions.getByName<CloudstreamExtension>("cloudstream").configuration()
+fun Project.cloudstream(
+    configuration: CloudstreamExtension.() -> Unit
+) = extensions
+    .getByName<CloudstreamExtension>("cloudstream")
+    .configuration()
 
-fun Project.android(configuration: BaseExtension.() -> Unit) = extensions.getByName<BaseExtension>("android").configuration()
+fun Project.android(
+    configuration: BaseExtension.() -> Unit
+) = extensions
+    .getByName<BaseExtension>("android")
+    .configuration()
 
 subprojects {
     apply(plugin = "com.android.library")
@@ -33,7 +48,10 @@ subprojects {
     apply(plugin = "com.lagradost.cloudstream3.gradle")
 
     cloudstream {
-        setRepo(System.getenv("GITHUB_REPOSITORY") ?: "https://github.com/ishakfdn3-ship-it/isodmf")
+        setRepo(
+            System.getenv("GITHUB_REPOSITORY")
+                ?: "https://github.com/ishakfdn3-ship-it/isodmf"
+        )
         authors = listOf("İshak")
     }
 
@@ -53,7 +71,9 @@ subprojects {
 
         tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile> {
             compilerOptions {
-                jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
+                jvmTarget.set(
+                    org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11
+                )
                 freeCompilerArgs.addAll(
                     listOf(
                         "-Xno-call-assertions",
@@ -74,9 +94,15 @@ subprojects {
         implementation(kotlin("stdlib"))
         implementation("com.github.Blatzar:NiceHttp:0.4.11")
         implementation("org.jsoup:jsoup:1.18.3")
-        implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.16.0")
-        implementation("com.fasterxml.jackson.core:jackson-databind:2.16.0")
-        implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1")
+        implementation(
+            "com.fasterxml.jackson.module:jackson-module-kotlin:2.16.0"
+        )
+        implementation(
+            "com.fasterxml.jackson.core:jackson-databind:2.16.0"
+        )
+        implementation(
+            "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1"
+        )
     }
 }
 
