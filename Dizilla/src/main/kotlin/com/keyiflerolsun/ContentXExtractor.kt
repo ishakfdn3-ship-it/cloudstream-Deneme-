@@ -22,6 +22,7 @@ open class ContentX : ExtractorApi() {
         Log.d("Kekik_${this.name}", "url » $url")
 
         val iSource = app.get(url, referer = extRef).text
+
         val iExtract = Regex("""window\.openPlayer\('([^']+)'""")
             .find(iSource)?.groups?.get(1)?.value
             ?: throw ErrorLoadingException("iExtract is null")
@@ -35,7 +36,7 @@ open class ContentX : ExtractorApi() {
 
                 if (!subUrls.add(subUrl)) return@forEach
 
-                subtitleCallback.invoke(
+                subtitleCallback(
                     newSubtitleFile(
                         lang = subLang
                             .replace("\\u0131", "ı")
@@ -48,7 +49,7 @@ open class ContentX : ExtractorApi() {
             }
 
         val vidSource = app.get(
-            "${mainUrl}/source2.php?v=${iExtract}",
+            "$mainUrl/source2.php?v=$iExtract",
             referer = extRef
         ).text
 
@@ -56,18 +57,14 @@ open class ContentX : ExtractorApi() {
             .find(vidSource)?.groups?.get(1)?.value
             ?: throw ErrorLoadingException("vidExtract is null")
 
-        val m3uLink = vidExtract.replace("\\", "")
-
-        callback.invoke(
+        callback(
             newExtractorLink(
-                source = this.name,
-                name = this.name,
-                url = m3uLink,
-                type = ExtractorLinkType.M3U8
-            ) {
+                source = name,
+                name = name,
+                url = vidExtract.replace("\\", ""),
+                type = ExtractorLinkType.M3U8,
                 referer = url
-                quality = Qualities.Unknown.value
-            }
+            )
         )
 
         val iDublaj = Regex(""","([^']+)","Türkçe""")
@@ -75,7 +72,7 @@ open class ContentX : ExtractorApi() {
 
         if (iDublaj != null) {
             val dublajSource = app.get(
-                "${mainUrl}/source2.php?v=${iDublaj}",
+                "$mainUrl/source2.php?v=$iDublaj",
                 referer = extRef
             ).text
 
@@ -83,18 +80,14 @@ open class ContentX : ExtractorApi() {
                 .find(dublajSource)?.groups?.get(1)?.value
                 ?: throw ErrorLoadingException("dublajExtract is null")
 
-            val dublajLink = dublajExtract.replace("\\", "")
-
-            callback.invoke(
+            callback(
                 newExtractorLink(
-                    source = "${this.name} Türkçe Dublaj",
-                    name = "${this.name} Türkçe Dublaj",
-                    url = dublajLink,
-                    type = ExtractorLinkType.M3U8
-                ) {
+                    source = "$name Türkçe Dublaj",
+                    name = "$name Türkçe Dublaj",
+                    url = dublajExtract.replace("\\", ""),
+                    type = ExtractorLinkType.M3U8,
                     referer = url
-                    quality = Qualities.Unknown.value
-                }
+                )
             )
         }
     }
