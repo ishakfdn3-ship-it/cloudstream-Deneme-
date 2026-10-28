@@ -1,8 +1,8 @@
 {
-    "name": "Turkish Providers Repository | @KekikAkademi",
-    "description": "Türkçe içerikli eklenti havuzu",
-    "manifestVersion": 1,
-    "pluginLists": [
-      "https://raw.githubusercontent.com/keyiflerolsun/Kekik-cloudstream/builds/plugins.json"
-    ]
+  "name": "CloudStream Deneme",
+  "description": "Kişisel Eklenti Depom",
+  "manifestVersion": 1,
+  "pluginLists": [
+    "https://raw.githubusercontent.com/ishakfdn3-ship-it/cloudstream-Deneme-/build/plugins.json"
+  ]
 }
