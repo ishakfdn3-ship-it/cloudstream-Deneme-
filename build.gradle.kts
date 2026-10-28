@@ -7,20 +7,12 @@ buildscript {
     repositories {
         google()
         mavenCentral()
-        // Cloudstream araçlarının ve bağımlılıklarının barındırıldığı JitPack deposu
         maven("https://jitpack.io")
     }
 
     dependencies {
         classpath("com.android.tools.build:gradle:8.7.3")
-        
-        // Seçenek A (Önerilen): JitPack üzerindeki varsayılan dalın (branch) en güncel sürümünü kullanır
         classpath("com.github.recloudstream:gradle:-SNAPSHOT")
-        
-        // Seçenek B: Eğer github.com/recloudstream/gradle deposundan belirli bir commit (işleme) 
-        // koduna sabitlemek istiyorsanız, commit kodunun sonuna "-SNAPSHOT" EKLEMEYİN:
-        // classpath("com.github.recloudstream:gradle:32895ae")
-
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.0")
     }
 }
@@ -45,8 +37,10 @@ subprojects {
     apply(plugin = "com.lagradost.cloudstream3.gradle")
 
     cloudstream {
-        // GitHub Actions üzerinden çalışırken GITHUB_REPOSITORY mevcut depo adını içerir
-        setRepo(System.getenv("GITHUB_REPOSITORY") ?: "https://github.com/user/repo")
+        setRepo(
+            System.getenv("GITHUB_REPOSITORY")
+                ?: "https://github.com/user/repo"
+        )
     }
 
     android {
@@ -59,13 +53,13 @@ subprojects {
         }
 
         compileOptions {
-            sourceCompatibility = JavaVersion.VERSION_1_8
-            targetCompatibility = JavaVersion.VERSION_1_8
+            sourceCompatibility = JavaVersion.VERSION_11
+            targetCompatibility = JavaVersion.VERSION_11
         }
 
-        tasks.withType<KotlinJvmCompile> {
+        tasks.withType<KotlinJvmCompile>().configureEach {
             compilerOptions {
-                jvmTarget.set(JvmTarget.JVM_1_8)
+                jvmTarget.set(JvmTarget.JVM_11)
                 freeCompilerArgs.addAll(
                     "-Xno-call-assertions",
                     "-Xno-param-assertions",
@@ -79,10 +73,8 @@ subprojects {
         val cloudstream by configurations
         val implementation by configurations
 
-        // Cloudstream sınıfları için taslaklar (stubs)
         cloudstream("com.lagradost:cloudstream3:pre-release")
 
-        // Cloudstream eklentileri tarafından kullanılan standart kütüphaneler
         implementation(kotlin("stdlib"))
         implementation("com.github.Blatzar:NiceHttp:0.4.11")
         implementation("org.jsoup:jsoup:1.18.3")
