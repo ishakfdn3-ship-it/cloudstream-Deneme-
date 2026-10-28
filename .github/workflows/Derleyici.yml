@@ -1,80 +1,80 @@
-Bu araç @keyiflerolsun tarafından | @KekikAkademi için yazılmıştır.
-
 name: CloudStream Derleyici
 
 "on":
-workflow_dispatch:
-push:
-branches:
-- master
-paths-ignore:
-- "/*.md"
-- "/.yml"
-- "**/.jpg"
-- "/*.png"
-- "/*.py"
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - "**/*.md"
+      - "**/*.yml"
+      - "**/*.jpg"
+      - "**/*.png"
+      - "**/*.py"
 
 permissions:
-contents: write
+  contents: write
 
 concurrency:
-group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
-cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-CloudStreamDerleyici:
-runs-on: ubuntu-latest
+  CloudStreamDerleyici:
+    runs-on: ubuntu-latest
 
-steps:
-  - name: Kaynak depoyu indir
-    uses: actions/checkout@v4
-    with:
-      path: src
+    steps:
+      - name: Kaynak depoyu indir
+        uses: actions/checkout@v4
+        with:
+          path: src
 
-  - name: builds dalını indir
-    uses: actions/checkout@v4
-    with:
-      ref: builds
-      path: builds
-      fetch-depth: 0
+      - name: builds dalini indir
+        uses: actions/checkout@v4
+        with:
+          ref: builds
+          path: builds
+          fetch-depth: 0
 
-  - name: JDK 17 kur
-    uses: actions/setup-java@v4
-    with:
-      distribution: temurin
-      java-version: "17"
+      - name: JDK 17 kur
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
 
-  - name: Gradle önbelleğini ayarla
-    uses: gradle/actions/setup-gradle@v4
+      - name: Gradle önbelleğini ayarla
+        uses: gradle/actions/setup-gradle@v4
 
-  - name: Eklentileri derle
-    shell: bash
-    run: |
-      set -euo pipefail
-      cd "$GITHUB_WORKSPACE/src"
-      chmod +x gradlew
-      ./gradlew make makePluginsJson
+      - name: Eklentileri derle ve JSON oluştur
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/src"
+          chmod +x gradlew
+          ./gradlew make makePluginsJson
 
-      test -f build/plugins.json
+          test -f build/plugins.json
 
-      find . -type f -name "*.cs3" -exec cp {} "$GITHUB_WORKSPACE/builds/" \;
-      cp build/plugins.json "$GITHUB_WORKSPACE/builds/plugins.json"
+          find . -type f -name "*.cs3" \
+            -exec cp {} "$GITHUB_WORKSPACE/builds/" \;
 
-  - name: builds dalına yayınla
-    shell: bash
-    run: |
-      set -euo pipefail
-      cd "$GITHUB_WORKSPACE/builds"
+          cp build/plugins.json "$GITHUB_WORKSPACE/builds/plugins.json"
 
-      git config user.name "github-actions[bot]"
-      git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: builds dalina yayinla
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/builds"
 
-      git add -A
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      if git diff --cached --quiet; then
-        echo "Yayınlanacak değişiklik yok."
-        exit 0
-      fi
+          git add -A
 
-      git commit -m "CloudStream eklentilerini güncelle"
-      git push origin HEAD:builds
+          if git diff --cached --quiet; then
+            echo "Yayinlanacak degisiklik yok."
+            exit 0
+          fi
+
+          git commit -m "CloudStream eklentilerini guncelle"
+          git push origin HEAD:builds
