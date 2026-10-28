@@ -1,8 +1,8 @@
 {
-  "name": "CloudStream Deneme",
-  "description": "Kişisel Eklenti Depom",
+  "name": "Cloudstream Deneme",
+  "description": "Kişisel CloudStream eklenti depom",
   "manifestVersion": 1,
   "pluginLists": [
-    "https://raw.githubusercontent.com/ishakfdn3-ship-it/cloudstream-Deneme-/build/plugins.json"
+    "https://raw.githubusercontent.com/ishakfdn3-ship-it/cloudstream-Deneme-/builds/plugins.json"
   ]
 }
