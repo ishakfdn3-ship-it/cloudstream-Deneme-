@@ -28,10 +28,10 @@ class HDFilmCehennemi : MainAPI() {
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val url = if (page == 1) request.data else "${request.data.trimEnd('/')}/page/$page/"
+        val baseUrl  = request.data.trimEnd('/')
+        val url      = if (page == 1) "$baseUrl/" else "$baseUrl/page/$page/"
         val document = app.get(url).document
 
-        // Bu temada kartlar genelde a.poster veya div.poster-card içinde yer alır
         val home = document.select("a.poster, div.poster-card, article.poster").mapNotNull {
             it.toSearchResult()
         }
@@ -53,7 +53,7 @@ class HDFilmCehennemi : MainAPI() {
         val img       = this.selectFirst("img")
         val posterUrl = fixUrlNull(img?.attr("data-src")?.ifEmpty { img.attr("src") })
 
-        val isSeries = href.contains("dizi", ignoreCase = true) || 
+        val isSeries = href.contains("dizi", ignoreCase = true) ||
                        this.text().contains("Sezon", ignoreCase = true)
 
         return if (isSeries) {
@@ -80,7 +80,6 @@ class HDFilmCehennemi : MainAPI() {
 
         val results = mutableListOf<SearchResponse>()
 
-        // Tema JSON içinde HTML listesi döndürüyorsa: {"results": ["<a ...>...</a>"]}
         val jsonSearch = tryParseJson<SearchJson>(response)
         if (!jsonSearch?.results.isNullOrEmpty()) {
             jsonSearch?.results?.forEach { htmlItem ->
@@ -90,7 +89,6 @@ class HDFilmCehennemi : MainAPI() {
             if (results.isNotEmpty()) return results
         }
 
-        // Doğrudan HTML dönüyorsa
         val doc = Jsoup.parse(response)
         return doc.select("a.poster, a.search-item, div.result-group a").mapNotNull {
             it.toSearchResult()
@@ -100,7 +98,6 @@ class HDFilmCehennemi : MainAPI() {
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
 
-        // 1. JSON-LD üzerinden verileri çek
         val ldJsonScript = document.selectFirst("script[type=application/ld+json]")?.data()
         val ldData       = tryParseJson<LdJson>(ldJsonScript)
 
@@ -123,18 +120,17 @@ class HDFilmCehennemi : MainAPI() {
 
         val tags   = ldData?.genre ?: document.select("div.post-info-genres a").map { it.text().trim() }
         val actors = ldData?.actor?.mapNotNull { it.name } ?: emptyList()
-        val rating = ldData?.aggregateRating?.ratingValue?.toScore()
         val imdbId = ldData?.sameAs?.firstOrNull { it.contains("imdb.com") }?.substringAfterLast("/")
 
-        // 2. Dizi bölümleri var mı kontrol et
         val episodeElements = document.select("div.seasons-tab-content a, div.episodes-list a, a.episode-item")
         if (episodeElements.isNotEmpty() || ldData?.type.equals("TVSeries", ignoreCase = true)) {
             val episodes = episodeElements.mapNotNull { ep ->
                 val epHref = fixUrlNull(ep.attr("href")) ?: return@mapNotNull null
                 val epName = ep.text().trim()
-                val seasonNum  = Regex("""(\d+)\.\s*Sezon""", RegexOption.IGNORE_CASE).find(epName)?.groupValues?.get(1)?.toIntOrNull()
-                    ?: ep.closest("[data-season]")?.attr("data-season")?.toIntOrNull() ?: 1
-                val episodeNum = Regex("""(\d+)\.\s*Bölüm""", RegexOption.IGNORE_CASE).find(epName)?.groupValues?.get(1)?.toIntOrNull()
+                val seasonParent = ep.parents().firstOrNull { it.hasAttr("data-season") }
+                val seasonNum    = Regex("""(\d+)\.\s*Sezon""", RegexOption.IGNORE_CASE).find(epName)?.groupValues?.get(1)?.toIntOrNull()
+                    ?: seasonParent?.attr("data-season")?.toIntOrNull() ?: 1
+                val episodeNum   = Regex("""(\d+)\.\s*Bölüm""", RegexOption.IGNORE_CASE).find(epName)?.groupValues?.get(1)?.toIntOrNull()
 
                 newEpisode(epHref) {
                     this.name    = epName
@@ -149,20 +145,17 @@ class HDFilmCehennemi : MainAPI() {
                     this.plot      = description
                     this.year      = year
                     this.tags      = tags
-                    this.score     = rating
                     addActors(actors)
                     addImdbId(imdbId)
                 }
             }
         }
 
-        // 3. Film Yanıtı
         return newMovieLoadResponse(rawTitle, url, TvType.Movie, url) {
             this.posterUrl = poster
             this.plot      = description
             this.year      = year
             this.tags      = tags
-            this.score     = rating
             addActors(actors)
             addImdbId(imdbId)
         }
@@ -177,7 +170,6 @@ class HDFilmCehennemi : MainAPI() {
         val document = app.get(data).document
         val processedUrls = mutableSetOf<String>()
 
-        // 1. Sayfada açık gelen varsayılan iframe'i işle
         document.selectFirst("div.video-container iframe")?.let { iframe ->
             val iframeSrc = fixUrlNull(iframe.attr("data-src").ifEmpty { iframe.attr("src") })
             if (iframeSrc != null && processedUrls.add(iframeSrc)) {
@@ -185,12 +177,12 @@ class HDFilmCehennemi : MainAPI() {
             }
         }
 
-        // 2. Alternatif butonları (button.alternative-link[data-video]) tek tek gez
         document.select("button.alternative-link").forEach { button ->
-            val videoId  = button.attr("data-video").ifEmpty { return@forEach }
-            val langCode = button.closest("div.alternative-links")?.attr("data-lang")?.uppercase() ?: "TR"
-            val altName  = button.text().trim()
-            val label    = "$langCode - $altName"
+            val videoId    = button.attr("data-video").ifEmpty { return@forEach }
+            val langParent = button.parents().firstOrNull { it.hasClass("alternative-links") }
+            val langCode   = langParent?.attr("data-lang")?.uppercase() ?: "TR"
+            val altName    = button.text().trim()
+            val label      = "$langCode - $altName"
 
             val responseText = runCatching {
                 app.get(
@@ -202,7 +194,6 @@ class HDFilmCehennemi : MainAPI() {
                 ).text
             }.getOrNull() ?: return@forEach
 
-            // JSON veya düz HTML içerisinden iframe src'sini ayıkla
             val cleanHtml = responseText.replace("\\\"", "\"").replace("\\/", "/")
             val iframeSrc = Jsoup.parse(cleanHtml).selectFirst("iframe")?.let {
                 fixUrlNull(it.attr("data-src").ifEmpty { it.attr("src") })
@@ -223,17 +214,14 @@ class HDFilmCehennemi : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        // Önce CloudStream içindeki hazır extractor'ları dene
         if (loadExtractor(iframeUrl, referer, subtitleCallback, callback)) return
 
-        // Özel hdfilmcehennemi.mobi / Close / Rapidrame embed çözücü
         runCatching {
             val embedResponse = app.get(iframeUrl, referer = referer)
             val embedDoc      = embedResponse.document
             val embedText     = embedResponse.text
             val embedHost     = Regex("""https?://[^/]+""").find(iframeUrl)?.value ?: mainUrl
 
-            // Altyazıları (.vtt / .srt) yakala
             Regex("""["']?file["']?\s*:\s*["']([^"']+\.(?:vtt|srt))["']\s*,\s*["']?label["']?\s*:\s*["']([^"']+)["']""")
                 .findAll(embedText).forEach { match ->
                     val subUrl  = fixUrl(match.groupValues[1], embedHost)
@@ -241,14 +229,13 @@ class HDFilmCehennemi : MainAPI() {
                     subtitleCallback.invoke(SubtitleFile(subLang, subUrl))
                 }
 
-            // Packer (eval(function(p,a,c,k,e,d)...)) varsa aç
             val packedScript = embedDoc.select("script").firstOrNull {
                 it.data().contains("eval(function(p,a,c,k,e,d)")
             }?.data()
 
             val unpacked = if (packedScript != null) getAndUnpack(packedScript) else embedText
 
-            // A) dc_hello("...") Base64 şifrelemesi varsa çöz
+            // 1. dc_hello Base64 şifrelemesi
             Regex("""dc_hello\(\[([^\]]+)\]\)|dc_hello\(["']([^"']+)["']\)""").find(unpacked)?.let { match ->
                 val rawParts = match.groupValues[1].ifEmpty { match.groupValues[2] }
                 val joined   = rawParts.replace("\"", "").replace("'", "").replace(",", "").replace(" ", "")
@@ -256,40 +243,27 @@ class HDFilmCehennemi : MainAPI() {
                 val m3u8Url  = Regex("""https?://[^\s"']+\.(?:m3u8|txt)[^\s"']*""").find(decoded)?.value ?: decoded
 
                 if (m3u8Url.startsWith("http")) {
-                    callback.invoke(
-                        newExtractorLink(
-                            source = this.name,
-                            name   = "${this.name} ($sourceLabel)",
-                            url    = m3u8Url,
-                            type   = ExtractorLinkType.M3U8
-                        ) {
-                            this.referer = iframeUrl
-                            this.quality = Qualities.Unknown.value
-                        }
-                    )
+                    M3u8Helper.generateM3u8(
+                        source  = "${this.name} ($sourceLabel)",
+                        streamUrl = m3u8Url,
+                        referer = iframeUrl
+                    ).forEach(callback)
                     return
                 }
             }
 
-            // B) Doğrudan file / sources içindeki .m3u8 bağlantısını yakala
+            // 2. Doğrudan file / src m3u8 bağlantısı
             Regex("""["']?(?:file|src)["']?\s*:\s*["'](https?://[^"']+\.m3u8[^"']*)["']""").find(unpacked)?.let { match ->
                 val m3u8Url = match.groupValues[1].replace("\\/", "/")
-                callback.invoke(
-                    newExtractorLink(
-                        source = this.name,
-                        name   = "${this.name} ($sourceLabel)",
-                        url    = m3u8Url,
-                        type   = ExtractorLinkType.M3U8
-                    ) {
-                        this.referer = iframeUrl
-                        this.quality = Qualities.Unknown.value
-                    }
-                )
+                M3u8Helper.generateM3u8(
+                    source    = "${this.name} ($sourceLabel)",
+                    streamUrl = m3u8Url,
+                    referer   = iframeUrl
+                ).forEach(callback)
             }
         }
     }
 
-    // JSON Veri Modelleri
     data class SearchJson(
         @JsonProperty("results") val results: List<String>? = null
     )
@@ -300,17 +274,12 @@ class HDFilmCehennemi : MainAPI() {
         @JsonProperty("image") val image: String? = null,
         @JsonProperty("datePublished") val datePublished: String? = null,
         @JsonProperty("genre") val genre: List<String>? = null,
-        @JsonProperty("sameAs") val sameAs: List<String>? = null,
+        @JsonProperty("sameAs") val sameAs: StringListDeserializer? = null,
         @JsonProperty("description") val description: String? = null,
-        @JsonProperty("actor") val actor: List<LdActor>? = null,
-        @JsonProperty("aggregateRating") val aggregateRating: LdRating? = null
+        @JsonProperty("actor") val actor: List<LdActor>? = null
     )
 
     data class LdActor(
         @JsonProperty("name") val name: String? = null
-    )
-
-    data class LdRating(
-        @JsonProperty("ratingValue") val ratingValue: String? = null
     )
 }
