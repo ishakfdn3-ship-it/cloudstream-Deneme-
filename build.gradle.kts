@@ -1,16 +1,26 @@
-import com.lagradost.cloudstream3.gradle.CloudstreamExtension
 import com.android.build.gradle.BaseExtension
+import com.lagradost.cloudstream3.gradle.CloudstreamExtension
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
 buildscript {
     repositories {
         google()
         mavenCentral()
+        // Cloudstream araçlarının ve bağımlılıklarının barındırıldığı JitPack deposu
         maven("https://jitpack.io")
     }
 
     dependencies {
         classpath("com.android.tools.build:gradle:8.7.3")
-        classpath("com.github.recloudstream:gradle:cce1b8d84dc796b8da4a92a64cedfb046d1937b3-SNAPSHOT")
+        
+        // Seçenek A (Önerilen): JitPack üzerindeki varsayılan dalın (branch) en güncel sürümünü kullanır
+        classpath("com.github.recloudstream:gradle:-SNAPSHOT")
+        
+        // Seçenek B: Eğer github.com/recloudstream/gradle deposundan belirli bir commit (işleme) 
+        // koduna sabitlemek istiyorsanız, commit kodunun sonuna "-SNAPSHOT" EKLEMEYİN:
+        // classpath("com.github.recloudstream:gradle:32895ae")
+
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0")
     }
 }
@@ -23,21 +33,11 @@ allprojects {
     }
 }
 
-fun Project.cloudstream(
-    configuration: CloudstreamExtension.() -> Unit
-) {
-    extensions
-        .getByName<CloudstreamExtension>("cloudstream")
-        .configuration()
-}
+fun Project.cloudstream(configuration: CloudstreamExtension.() -> Unit) =
+    extensions.getByName<CloudstreamExtension>("cloudstream").configuration()
 
-fun Project.android(
-    configuration: BaseExtension.() -> Unit
-) {
-    extensions
-        .getByName<BaseExtension>("android")
-        .configuration()
-}
+fun Project.android(configuration: BaseExtension.() -> Unit) =
+    extensions.getByName<BaseExtension>("android").configuration()
 
 subprojects {
     apply(plugin = "com.android.library")
@@ -45,15 +45,12 @@ subprojects {
     apply(plugin = "com.lagradost.cloudstream3.gradle")
 
     cloudstream {
-        setRepo(
-            System.getenv("GITHUB_REPOSITORY")
-                ?: "https://github.com/ishakfdn3-ship-it/isodmf"
-        )
-        authors = listOf("İshak")
+        // GitHub Actions üzerinden çalışırken GITHUB_REPOSITORY mevcut depo adını içerir
+        setRepo(System.getenv("GITHUB_REPOSITORY") ?: "https://github.com/user/repo")
     }
 
     android {
-        namespace = "com.isodmf"
+        namespace = "recloudstream"
 
         defaultConfig {
             minSdk = 21
@@ -62,22 +59,17 @@ subprojects {
         }
 
         compileOptions {
-            sourceCompatibility = JavaVersion.VERSION_11
-            targetCompatibility = JavaVersion.VERSION_11
+            sourceCompatibility = JavaVersion.VERSION_1_8
+            targetCompatibility = JavaVersion.VERSION_1_8
         }
 
-        tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile> {
+        tasks.withType<KotlinJvmCompile> {
             compilerOptions {
-                jvmTarget.set(
-                    org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11
-                )
-
+                jvmTarget.set(JvmTarget.JVM_1_8)
                 freeCompilerArgs.addAll(
-                    listOf(
-                        "-Xno-call-assertions",
-                        "-Xno-param-assertions",
-                        "-Xno-receiver-assertions"
-                    )
+                    "-Xno-call-assertions",
+                    "-Xno-param-assertions",
+                    "-Xno-receiver-assertions"
                 )
             }
         }
@@ -87,20 +79,14 @@ subprojects {
         val cloudstream by configurations
         val implementation by configurations
 
+        // Cloudstream sınıfları için taslaklar (stubs)
         cloudstream("com.lagradost:cloudstream3:pre-release")
 
+        // Cloudstream eklentileri tarafından kullanılan standart kütüphaneler
         implementation(kotlin("stdlib"))
         implementation("com.github.Blatzar:NiceHttp:0.4.11")
         implementation("org.jsoup:jsoup:1.18.3")
-        implementation(
-            "com.fasterxml.jackson.module:jackson-module-kotlin:2.16.0"
-        )
-        implementation(
-            "com.fasterxml.jackson.core:jackson-databind:2.16.0"
-        )
-        implementation(
-            "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1"
-        )
+        implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.13.1")
     }
 }
 
