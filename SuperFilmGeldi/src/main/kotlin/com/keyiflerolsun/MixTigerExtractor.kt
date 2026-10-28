@@ -18,7 +18,7 @@ open class MixTiger : ExtractorApi() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        val extRef = referer ?: ""
+        val extRef = referer.orEmpty()
         val postUrl = "${url}?do=getVideo"
 
         Log.d("Kekik_${this.name}", "postUrl » $postUrl")
@@ -45,7 +45,7 @@ open class MixTiger : ExtractorApi() {
         val videoSrc = videoResponse.videoSrc
 
         if (!videoSrc.isNullOrBlank()) {
-            Log.d("Kekik_${this.name}", "m3uLink » $videoSrc")
+            Log.d("Kekik_${this.name}", "videoSrc » $videoSrc")
             loadExtractor(videoSrc, extRef, subtitleCallback, callback)
             return
         }
@@ -58,6 +58,12 @@ open class MixTiger : ExtractorApi() {
 
         Log.d("Kekik_${this.name}", "m3uLink » $m3uLink")
 
+        val linkReferer = if (m3uLink.contains("disk.yandex")) {
+            ""
+        } else {
+            extRef
+        }
+
         callback.invoke(
             newExtractorLink(
                 source = this.name,
@@ -65,12 +71,8 @@ open class MixTiger : ExtractorApi() {
                 url = m3uLink,
                 type = INFER_TYPE
             ) {
-                referer = if (m3uLink.contains("disk.yandex")) {
-                    ""
-                } else {
-                    extRef
-                }
-                quality = Qualities.Unknown.value
+                this.referer = linkReferer
+                this.quality = Qualities.Unknown.value
             }
         )
     }
