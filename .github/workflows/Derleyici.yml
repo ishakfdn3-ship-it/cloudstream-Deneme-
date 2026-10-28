@@ -2,10 +2,6 @@ Bu araç @keyiflerolsun tarafından | @KekikAkademi için yazılmıştır.
 
 name: CloudStream Derleyici
 
-concurrency:
-group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
-cancel-in-progress: true
-
 "on":
 workflow_dispatch:
 push:
@@ -21,38 +17,40 @@ paths-ignore:
 permissions:
 contents: write
 
+concurrency:
+group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+cancel-in-progress: true
+
 jobs:
 CloudStreamDerleyici:
 runs-on: ubuntu-latest
 
 steps:
-  - name: Kaynak Depoyu Kontrol Et
+  - name: Kaynak depoyu indir
     uses: actions/checkout@v4
     with:
       path: src
 
-  - name: Derleme Deposunu Kontrol Et
+  - name: builds dalını indir
     uses: actions/checkout@v4
     with:
       ref: builds
       path: builds
       fetch-depth: 0
-      token: ${{ secrets.GITHUB_TOKEN }}
 
-  - name: JDK 17 Ayarla
+  - name: JDK 17 kur
     uses: actions/setup-java@v4
     with:
       distribution: temurin
-      java-version: 17
+      java-version: "17"
 
-  - name: Gradle Önbelleğini Ayarla
+  - name: Gradle önbelleğini ayarla
     uses: gradle/actions/setup-gradle@v4
 
-  - name: Eklentileri Derle ve JSON Oluştur
+  - name: Eklentileri derle
     shell: bash
     run: |
       set -euo pipefail
-
       cd "$GITHUB_WORKSPACE/src"
       chmod +x gradlew
       ./gradlew make makePluginsJson
@@ -62,22 +60,19 @@ steps:
       find . -type f -name "*.cs3" -exec cp {} "$GITHUB_WORKSPACE/builds/" \;
       cp build/plugins.json "$GITHUB_WORKSPACE/builds/plugins.json"
 
-  - name: builds Dalına Yayınla
+  - name: builds dalına yayınla
     shell: bash
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     run: |
       set -euo pipefail
-
       cd "$GITHUB_WORKSPACE/builds"
 
-      git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
       git config user.name "github-actions[bot]"
+      git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       git add -A
 
       if git diff --cached --quiet; then
-        echo "Yayınlanacak değişiklik bulunamadı."
+        echo "Yayınlanacak değişiklik yok."
         exit 0
       fi
 
