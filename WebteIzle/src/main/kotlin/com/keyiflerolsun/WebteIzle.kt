@@ -1,4 +1,5 @@
-// ! Bu araç @keyiflerolsun tarafından | @KekikAkademi için yazılmıştır.
+
+ // ! Bu araç @keyiflerolsun tarafından | @KekikAkademi için yazılmıştır.
 
 package com.keyiflerolsun
 
@@ -11,6 +12,7 @@ import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
 import com.lagradost.cloudstream3.network.CloudflareKiller
 import com.lagradost.cloudstream3.utils.AppUtils
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.INFER_TYPE
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.getQualityFromName
 import com.lagradost.cloudstream3.utils.loadExtractor
@@ -86,7 +88,9 @@ class WebteIzle : MainAPI() {
         }
 
         val document = app.get(url).document
-        val home = document.select("div.golgever").mapNotNull { it.toSearchResult() }
+        val home = document.select("div.golgever").mapNotNull {
+            it.toSearchResult()
+        }
 
         return newHomePageResponse(request.name, home)
     }
@@ -111,29 +115,58 @@ class WebteIzle : MainAPI() {
             interceptor = interceptor
         ).document
 
-        return document.select("div.golgever").mapNotNull { it.toSearchResult() }
+        return document.select("div.golgever").mapNotNull {
+            it.toSearchResult()
+        }
     }
 
-    override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
+    override suspend fun quickSearch(query: String): List<SearchResponse> {
+        return search(query)
+    }
 
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
 
         val title = document.selectFirst("[property='og:title']")
-            ?.attr("content")?.substringBefore(" izle") ?: return null
-        val poster = fixUrlNull(document.selectFirst("div.card img")?.attr("data-src"))
+            ?.attr("content")
+            ?.substringBefore(" izle")
+            ?: return null
+
+        val poster = fixUrlNull(
+            document.selectFirst("div.card img")?.attr("data-src")
+        )
+
         val year = document.selectXpath(
             "//td[contains(text(), 'Vizyon')]/following-sibling::td"
         ).text().trim().split(" ").last().toIntOrNull()
-        val description = document.selectFirst("blockquote")?.text()?.trim()
-        val tags = document.selectXpath("//a[@itemgroup='genre']").map { it.text() }
+
+        val description = document.selectFirst("blockquote")
+            ?.text()
+            ?.trim()
+
+        val tags = document.selectXpath(
+            "//a[@itemgroup='genre']"
+        ).map { it.text() }
+
         val duration = document.selectXpath(
             "//td[contains(text(), 'Süre')]/following-sibling::td"
         ).text().trim().split(" ").first().toIntOrNull()
-        val trailer = document.selectFirst("button#fragman")?.attr("data-ytid")
-        val actors = document.selectXpath("//div[@data-tab='oyuncular']//a").mapNotNull {
-            val actorName = it.selectFirst("span")?.text()?.trim() ?: return@mapNotNull null
-            val actorPoster = fixUrlNull(it.selectFirst("img")?.attr("data-src"))
+
+        val trailer = document.selectFirst("button#fragman")
+            ?.attr("data-ytid")
+
+        val actors = document.selectXpath(
+            "//div[@data-tab='oyuncular']//a"
+        ).mapNotNull {
+            val actorName = it.selectFirst("span")
+                ?.text()
+                ?.trim()
+                ?: return@mapNotNull null
+
+            val actorPoster = fixUrlNull(
+                it.selectFirst("img")?.attr("data-src")
+            )
+
             Actor(actorName, actorPoster)
         }
 
@@ -143,9 +176,11 @@ class WebteIzle : MainAPI() {
             this.plot = description
             this.tags = tags
             this.duration = duration
+
             if (!trailer.isNullOrBlank()) {
-                addTrailer("https://www.youtube.com/embed/${trailer}")
+                addTrailer("https://www.youtube.com/embed/$trailer")
             }
+
             addActors(actors)
         }
     }
@@ -159,26 +194,36 @@ class WebteIzle : MainAPI() {
         Log.d("WBTI", "data » $data")
 
         val document = app.get(data).document
-        val filmId = document.selectFirst("button#wip")?.attr("data-id") ?: return false
+        val filmId = document.selectFirst("button#wip")
+            ?.attr("data-id")
+            ?: return false
 
         Log.d("WBTI", "filmId » $filmId")
 
         val dilList = mutableListOf<String>()
 
-        if (document.selectFirst("div.golge a[href*=dublaj]")?.attr("src") != null) {
+        if (
+            document.selectFirst("div.golge a[href*=dublaj]")
+                ?.attr("src") != null
+        ) {
             dilList.add("0")
         }
 
-        if (document.selectFirst("div.golge a[href*=altyazi]")?.attr("src") != null) {
+        if (
+            document.selectFirst("div.golge a[href*=altyazi]")
+                ?.attr("src") != null
+        ) {
             dilList.add("1")
         }
 
-        dilList.forEach { dil ->
+        for (dil in dilList) {
             val dilAd = if (dil == "0") "Dublaj" else "Altyazı"
 
             val playerApi = app.post(
                 "${mainUrl}/ajax/dataAlternatif3.asp",
-                headers = mapOf("X-Requested-With" to "XMLHttpRequest"),
+                headers = mapOf(
+                    "X-Requested-With" to "XMLHttpRequest"
+                ),
                 data = mapOf(
                     "filmid" to filmId,
                     "dil" to dil,
@@ -189,19 +234,26 @@ class WebteIzle : MainAPI() {
             ).text
 
             val playerData = AppUtils.tryParseJson<DataAlternatif>(playerApi)
-                ?: return@forEach
+                ?: continue
 
             for (thisEmbed in playerData.data) {
                 val embedApi = app.post(
                     "${mainUrl}/ajax/dataEmbed.asp",
-                    headers = mapOf("X-Requested-With" to "XMLHttpRequest"),
-                    data = mapOf("id" to thisEmbed.id.toString())
+                    headers = mapOf(
+                        "X-Requested-With" to "XMLHttpRequest"
+                    ),
+                    data = mapOf(
+                        "id" to thisEmbed.id.toString()
+                    )
                 ).document
 
-                var iframe = fixUrlNull(embedApi.selectFirst("iframe")?.attr("src"))
+                var iframe = fixUrlNull(
+                    embedApi.selectFirst("iframe")?.attr("src")
+                )
 
                 if (iframe == null) {
                     val scriptSource = embedApi.html()
+
                     val matchResult = Regex(
                         """(vidmoly|okru|filemoon)\('([\d\w]+)','"""
                     ).find(scriptSource)
@@ -213,18 +265,35 @@ class WebteIzle : MainAPI() {
                         val vidId = matchResult.groupValues[2]
 
                         iframe = when (platform) {
-                            "vidmoly" -> "https://vidmoly.to/embed-${vidId}.html"
-                            "okru" -> "https://odnoklassniki.ru/videoembed/${vidId}"
-                            "filemoon" -> "https://filemoon.sx/e/${vidId}"
+                            "vidmoly" ->
+                                "https://vidmoly.to/embed-${vidId}.html"
+
+                            "okru" ->
+                                "https://odnoklassniki.ru/videoembed/${vidId}"
+
+                            "filemoon" ->
+                                "https://filemoon.sx/e/${vidId}"
+
                             else -> null
                         }
                     }
-                } else if (iframe.contains(mainUrl)) {
-                    Log.d("WBTI", "iframe » $iframe")
+                }
 
-                    val iSource = app.get(iframe, referer = data).text
+                val currentIframe = iframe ?: continue
+
+                if (currentIframe.contains(mainUrl)) {
+                    Log.d("WBTI", "iframe » $currentIframe")
+
+                    val iSource = app.get(
+                        currentIframe,
+                        referer = data
+                    ).text
+
                     val encoded = Regex("""file": "([^"]+)""")
-                        .find(iSource)?.groupValues?.get(1) ?: continue
+                        .find(iSource)
+                        ?.groupValues
+                        ?.get(1)
+                        ?: continue
 
                     val bytes = encoded.split("\\x")
                         .filter { it.isNotEmpty() }
@@ -235,15 +304,22 @@ class WebteIzle : MainAPI() {
                     Log.d("WBTI", "m3uLink » $m3uLink")
 
                     val trackStr = Regex("""tracks = \[([^]]+)""")
-                        .find(iSource)?.groupValues?.get(1)
+                        .find(iSource)
+                        ?.groupValues
+                        ?.get(1)
 
                     if (trackStr != null) {
                         val tracks: List<Track> =
-                            jacksonObjectMapper().readValue("[${trackStr}]")
+                            jacksonObjectMapper().readValue("[$trackStr]")
 
                         for (track in tracks) {
-                            if (track.file == null || track.label == null) continue
-                            if (track.label.contains("Forced")) continue
+                            if (track.file == null || track.label == null) {
+                                continue
+                            }
+
+                            if (track.label.contains("Forced")) {
+                                continue
+                            }
 
                             subtitleCallback.invoke(
                                 SubtitleFile(
@@ -263,7 +339,7 @@ class WebteIzle : MainAPI() {
                             source = "$dilAd - ${this.name}",
                             name = "$dilAd - ${this.name}",
                             url = m3uLink,
-                            type = ExtractorLinkType.M3U8
+                            type = INFER_TYPE
                         ) {
                             this.referer = "${mainUrl}/"
                             this.quality = getQualityFromName("1440p")
@@ -271,50 +347,51 @@ class WebteIzle : MainAPI() {
                     )
 
                     continue
-                } else if (
-                    iframe?.contains("playerjs-three.vercel.app") == true ||
-                    iframe?.contains("cstkcstk.github.io") == true
-                ) {
-                    val decoded = iframe.substringAfter("&v=").let { query ->
-                        val hexString = query.replace("\\x", "")
-                        val bytes = hexString.chunked(2)
-                            .map { it.toInt(16).toByte() }
-                            .toByteArray()
+                }
 
-                        bytes.toString(Charsets.UTF_8)
-                    }
+                if (
+                    currentIframe.contains("playerjs-three.vercel.app") ||
+                    currentIframe.contains("cstkcstk.github.io")
+                ) {
+                    val decoded = currentIframe
+                        .substringAfter("&v=")
+                        .let { query ->
+                            val hexString = query.replace("\\x", "")
+
+                            val decodedBytes = hexString
+                                .chunked(2)
+                                .map { it.toInt(16).toByte() }
+                                .toByteArray()
+
+                            decodedBytes.toString(Charsets.UTF_8)
+                        }
 
                     callback.invoke(
                         newExtractorLink(
                             source = "$dilAd - ${this.name}",
                             name = "$dilAd - ${this.name}",
                             url = fixUrl(decoded),
-                            type = ExtractorLinkType.M3U8
+                            type = INFER_TYPE
                         ) {
                             this.referer = "${mainUrl}/"
                             this.quality = Qualities.Unknown.value
                         }
                     )
+
+                    continue
                 }
 
-                if (!iframe.isNullOrBlank()) {
-                    Log.d("WBTI", "iframe » $iframe")
+                Log.d("WBTI", "iframe » $currentIframe")
 
-                    loadExtractor(iframe, "${mainUrl}/", subtitleCallback) { link ->
-                        callback.invoke(
-                            newExtractorLink(
-                                source = "$dilAd - ${link.name}",
-                                name = "$dilAd - ${link.name}",
-                                url = link.url,
-                                type = link.type
-                            ) {
-                                this.referer = link.referer
-                                this.quality = link.quality
-                                this.headers = link.headers
-                                this.extractorData = link.extractorData
-                            }
-                        )
-                    }
+                // loadExtractor suspend bir fonksiyondur.
+                // Callback içinden newExtractorLink çağırmak yerine
+                // çözülen bağlantıyı doğrudan üst callback'e aktar.
+                loadExtractor(
+                    currentIframe,
+                    "${mainUrl}/",
+                    subtitleCallback
+                ) { link ->
+                    callback.invoke(link)
                 }
             }
         }
