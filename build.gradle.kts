@@ -21,7 +21,7 @@ buildscript {
         // koduna sabitlemek istiyorsanız, commit kodunun sonuna "-SNAPSHOT" EKLEMEYİN:
         // classpath("com.github.recloudstream:gradle:32895ae")
 
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.0")
     }
 }
 
