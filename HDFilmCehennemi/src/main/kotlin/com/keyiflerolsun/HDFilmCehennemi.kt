@@ -6,6 +6,7 @@ import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
 import com.lagradost.cloudstream3.LoadResponse.Companion.addImdbId
 import com.lagradost.cloudstream3.utils.*
+import com.lagradost.cloudstream3.utils.AppUtils.getAndUnpack
 import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
@@ -222,6 +223,7 @@ class HDFilmCehennemi : MainAPI() {
             val embedText     = embedResponse.text
             val embedHost     = Regex("""https?://[^/]+""").find(iframeUrl)?.value ?: mainUrl
 
+            // Altyazılar
             Regex("""["']?file["']?\s*:\s*["']([^"']+\.(?:vtt|srt))["']\s*,\s*["']?label["']?\s*:\s*["']([^"']+)["']""")
                 .findAll(embedText).forEach { match ->
                     val subUrl  = fixUrl(match.groupValues[1], embedHost)
@@ -235,31 +237,53 @@ class HDFilmCehennemi : MainAPI() {
 
             val unpacked = if (packedScript != null) getAndUnpack(packedScript) else embedText
 
-            // 1. dc_hello Base64 şifrelemesi
-            Regex("""dc_hello\(\[([^\]]+)\]\)|dc_hello\(["']([^"']+)["']\)""").find(unpacked)?.let { match ->
-                val rawParts = match.groupValues[1].ifEmpty { match.groupValues[2] }
-                val joined   = rawParts.replace("\"", "").replace("'", "").replace(",", "").replace(" ", "")
-                val decoded  = String(Base64.decode(joined, Base64.DEFAULT))
-                val m3u8Url  = Regex("""https?://[^\s"']+\.(?:m3u8|txt)[^\s"']*""").find(decoded)?.value ?: decoded
+            // 1) dc_hello base64
+            Regex("""dc_hello\(\s*\[([^\]]+)\]\s*\)|dc_hello\(\s*["']([^"']+)["']\s*\)""")
+                .find(unpacked)?.let { match ->
+                    val rawParts = match.groupValues[1].ifEmpty { match.groupValues[2] }
+                    val joined   = rawParts.replace("\"", "").replace("'", "")
+                        .replace(",", "").replace(" ", "")
+                    val decoded  = runCatching {
+                        String(Base64.decode(joined, Base64.URL_SAFE))
+                    }.getOrElse {
+                        String(Base64.decode(joined, Base64.DEFAULT))
+                    }
+                    val m3u8Url = Regex("""https?://[^\s"']+\.(?:m3u8|txt)[^\s"']*""")
+                        .find(decoded)?.value ?: decoded
 
-                if (m3u8Url.startsWith("http")) {
+                    if (m3u8Url.startsWith("http")) {
+                        M3u8Helper.generateM3u8(
+                            source    = "${this.name} ($sourceLabel)",
+                            streamUrl = m3u8Url,
+                            referer   = iframeUrl
+                        ).forEach(callback)
+                        return
+                    }
+                }
+
+            // 2) Doğrudan file / src m3u8
+            Regex("""["']?(?:file|src)["']?\s*:\s*["'](https?://[^"']+\.m3u8[^"']*)["']""")
+                .find(unpacked)?.let { match ->
+                    val m3u8Url = match.groupValues[1].replace("\\/", "/")
                     M3u8Helper.generateM3u8(
-                        source  = "${this.name} ($sourceLabel)",
+                        source    = "${this.name} ($sourceLabel)",
                         streamUrl = m3u8Url,
-                        referer = iframeUrl
+                        referer   = iframeUrl
                     ).forEach(callback)
                     return
                 }
-            }
 
-            // 2. Doğrudan file / src m3u8 bağlantısı
-            Regex("""["']?(?:file|src)["']?\s*:\s*["'](https?://[^"']+\.m3u8[^"']*)["']""").find(unpacked)?.let { match ->
-                val m3u8Url = match.groupValues[1].replace("\\/", "/")
-                M3u8Helper.generateM3u8(
-                    source    = "${this.name} ($sourceLabel)",
-                    streamUrl = m3u8Url,
-                    referer   = iframeUrl
-                ).forEach(callback)
+            // 3) Eski sources: script yapısı (yedek)
+            embedDoc.select("script").firstOrNull { it.data().contains("sources:") }?.data()?.let { script ->
+                val unpackedScript = getAndUnpack(script)
+                Regex("""file["']?\s*:\s*["']([^"']+\.m3u8[^"']*)["']""")
+                    .find(unpackedScript)?.let { match ->
+                        M3u8Helper.generateM3u8(
+                            source    = "${this.name} ($sourceLabel)",
+                            streamUrl = match.groupValues[1].replace("\\/", "/"),
+                            referer   = iframeUrl
+                        ).forEach(callback)
+                    }
             }
         }
     }
@@ -274,7 +298,7 @@ class HDFilmCehennemi : MainAPI() {
         @JsonProperty("image") val image: String? = null,
         @JsonProperty("datePublished") val datePublished: String? = null,
         @JsonProperty("genre") val genre: List<String>? = null,
-        @JsonProperty("sameAs") val sameAs: StringListDeserializer? = null,
+        @JsonProperty("sameAs") val sameAs: List<String>? = null,
         @JsonProperty("description") val description: String? = null,
         @JsonProperty("actor") val actor: List<LdActor>? = null
     )
