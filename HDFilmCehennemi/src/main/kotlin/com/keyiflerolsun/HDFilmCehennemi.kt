@@ -1,5 +1,6 @@
 package com.keyiflerolsun
 
+import android.util.Base64
 import android.util.Log
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.fasterxml.jackson.databind.DeserializationFeature
@@ -25,7 +26,6 @@ class HDFilmCehennemi : MainAPI() {
     override val hasQuickSearch = true
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
 
-    // CF bypass ayarları
     override var sequentialMainPage = true
     override var sequentialMainPageDelay = 200L
     override var sequentialMainPageScrollDelay = 200L
@@ -33,15 +33,14 @@ class HDFilmCehennemi : MainAPI() {
     private val cloudflareKiller by lazy { CloudflareKiller() }
     private val interceptor by lazy { CloudflareInterceptor(cloudflareKiller) }
 
-    class CloudflareInterceptor(private val cloudflareKiller: CloudflareKiller) : Interceptor {
+    class CloudflareInterceptor(private val killer: CloudflareKiller) : Interceptor {
         override fun intercept(chain: Interceptor.Chain): Response {
             val request = chain.request()
             val response = chain.proceed(request)
-            val doc = Jsoup.parse(response.peekBody(1024 * 1024).string())
-            val title = doc.select("title").text()
-
+            val peeked = response.peekBody(1024 * 1024).string()
+            val title = Jsoup.parse(peeked).select("title").text()
             if (title == "Just a moment..." || title == "Bir dakika lütfen...") {
-                return cloudflareKiller.intercept(chain)
+                return killer.intercept(chain)
             }
             return response
         }
@@ -68,8 +67,8 @@ class HDFilmCehennemi : MainAPI() {
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val objectMapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
-        objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+        val mapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
+        mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
 
         val url = request.data.replace("sayfano", page.toString())
         val headers = mapOf(
@@ -78,19 +77,23 @@ class HDFilmCehennemi : MainAPI() {
             "X-Requested-With" to "fetch"
         )
 
-        val response = app.get(url, headers = headers, referer = mainUrl, interceptor = interceptor)
-        val text = response.text  // FIX: .toString() yerine .text
+        val text = try {
+            app.get(url, headers = headers, referer = mainUrl, interceptor = interceptor).text
+        } catch (e: Throwable) {
+            Log.e("HDCH", "getMainPage fetch: ${e.message}")
+            return newHomePageResponse(request.name, emptyList())
+        }
 
         if (text.isBlank() || text.contains("Sayfa Bulunamadı")) {
             return newHomePageResponse(request.name, emptyList())
         }
 
-        val aa: HDFC? = try {
-            objectMapper.readValue(text)
+        val aa: HDFC = try {
+            mapper.readValue(text)
         } catch (e: Throwable) {
-            Log.e("HDCH", "getMainPage JSON parse fail: ${e.message}")
-            null
-        } ?: return newHomePageResponse(request.name, emptyList())
+            Log.e("HDCH", "getMainPage json: ${e.message}")
+            return newHomePageResponse(request.name, emptyList())
+        }
 
         val document = Jsoup.parse(aa.html)
         val home = document.select("a").mapNotNull { it.toSearchResult() }
@@ -112,31 +115,46 @@ class HDFilmCehennemi : MainAPI() {
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val response = app.get(
-            "${mainUrl}/search?q=${query}",
-            headers = mapOf("X-Requested-With" to "fetch"),
-            interceptor = interceptor
-        ).parsedSafe<Results>() ?: return emptyList()
+        val mapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
+        mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
 
-        val searchResults = mutableListOf<SearchResponse>()
-        response.results.forEach { resultHtml ->
-            val document = Jsoup.parse(resultHtml)
-            val title = document.selectFirst("h4.title")?.text() ?: return@forEach
-            val href = fixUrlNull(document.selectFirst("a")?.attr("href")) ?: return@forEach
-            val posterUrl = fixUrlNull(document.selectFirst("img")?.attr("src"))
-                ?: fixUrlNull(document.selectFirst("img")?.attr("data-src"))
+        val text = try {
+            app.get(
+                "${mainUrl}/search?q=${query}",
+                headers = mapOf("X-Requested-With" to "fetch"),
+                interceptor = interceptor
+            ).text
+        } catch (e: Throwable) {
+            return emptyList()
+        }
 
-            searchResults.add(
+        val response: Results = try {
+            mapper.readValue(text)
+        } catch (e: Throwable) {
+            return emptyList()
+        }
+
+        val out = mutableListOf<SearchResponse>()
+        for (html in response.results) {
+            val doc = Jsoup.parse(html)
+            val title = doc.selectFirst("h4.title")?.text() ?: continue
+            val href = fixUrlNull(doc.selectFirst("a")?.attr("href")) ?: continue
+            val posterUrl = fixUrlNull(doc.selectFirst("img")?.attr("src"))
+                ?: fixUrlNull(doc.selectFirst("img")?.attr("data-src"))
+
+            out.add(
                 newMovieSearchResponse(title, href, TvType.Movie) {
                     this.posterUrl = posterUrl?.replace("/thumb/", "/list/")
                 }
             )
         }
-        return searchResults
+        return out
     }
 
     override suspend fun load(url: String): LoadResponse? {
-        val document = app.get(url, interceptor = interceptor).document
+        val document = Jsoup.parse(
+            app.get(url, interceptor = interceptor).text
+        )
 
         val title = document.selectFirst("h1.section-title")?.text()?.substringBefore(" izle") ?: return null
         val poster = fixUrlNull(
@@ -147,6 +165,7 @@ class HDFilmCehennemi : MainAPI() {
         val tvType = if (document.select("div.seasons").isEmpty()) TvType.Movie else TvType.TvSeries
         val description = document.selectFirst("article.post-info-content > p")?.text()?.trim()
         val rating = document.selectFirst("div.post-info-imdb-rating span")?.text()?.substringBefore("(")?.trim()
+
         val actors = document.select("div.post-info-cast a").mapNotNull {
             val actorName = it.selectFirst("strong")?.text() ?: return@mapNotNull null
             Actor(actorName, it.select("img").attr("data-src"))
@@ -157,7 +176,6 @@ class HDFilmCehennemi : MainAPI() {
             val recHref = fixUrlNull(it.selectFirst("a")?.attr("href")) ?: return@mapNotNull null
             val recPosterUrl = fixUrlNull(it.selectFirst("img")?.attr("data-src"))
                 ?: fixUrlNull(it.selectFirst("img")?.attr("src"))
-
             newTvSeriesSearchResponse(recName, recHref, TvType.TvSeries) {
                 this.posterUrl = recPosterUrl
             }
@@ -173,7 +191,6 @@ class HDFilmCehennemi : MainAPI() {
                 val epHref = fixUrlNull(it.attr("href")) ?: return@mapNotNull null
                 val epEpisode = Regex("""(\d+)\. ?Bölüm""").find(epName)?.groupValues?.get(1)?.toIntOrNull()
                 val epSeason = Regex("""(\d+)\. ?Sezon""").find(epName)?.groupValues?.get(1)?.toIntOrNull() ?: 1
-
                 newEpisode(epHref) {
                     this.name = epName
                     this.season = epSeason
@@ -211,19 +228,15 @@ class HDFilmCehennemi : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        Log.d("HDCH", "loadLinks data » $data")
-        val document = app.get(data, interceptor = interceptor).document
+        Log.d("HDCH", "loadLinks » $data")
+        val document = Jsoup.parse(app.get(data, interceptor = interceptor).text)
 
-        document.select("div.alternative-links").map { element ->
-            element to element.attr("data-lang").uppercase()
-        }.forEach { (element, langCode) ->
-            element.select("button.alternative-link").map { button ->
-                button.text().replace("(HDrip Xbet)", "").trim() + " $langCode" to button.attr("data-video")
-            }.forEach { (source, videoID) ->
-                if (videoID.isBlank()) {
-                    Log.d("HDCH", "videoID boş: $source")
-                    return@forEach
-                }
+        document.select("div.alternative-links").forEach { element ->
+            val langCode = element.attr("data-lang").uppercase()
+            element.select("button.alternative-link").forEach { button ->
+                val source = button.text().replace("(HDrip Xbet)", "").trim() + " $langCode"
+                val videoID = button.attr("data-video")
+                if (videoID.isBlank()) return@forEach
 
                 val apiGet = try {
                     app.get(
@@ -236,46 +249,40 @@ class HDFilmCehennemi : MainAPI() {
                         referer = data
                     ).text
                 } catch (e: Throwable) {
-                    Log.e("HDCH", "video API fail: ${e.message}")
+                    Log.e("HDCH", "api fail: ${e.message}")
                     ""
                 }
-
                 if (apiGet.isBlank()) return@forEach
 
                 var iframe = Regex("""data-src=\\"([^"]+)""").find(apiGet)?.groupValues?.get(1)
                     ?.replace("\\", "") ?: run {
-                        Log.e("HDCH", "iframe bulunamadı, API yanıtı: ${apiGet.take(200)}")
+                        Log.e("HDCH", "iframe yok: ${apiGet.take(300)}")
                         return@forEach
                     }
-
                 iframe = iframe.replace("{rapidrame_id}", "")
                 Log.d("HDCH", "$source » $videoID » $iframe")
 
-                // Built-in extractor dene, çalışıp çalışmadığını takip et
-                var linkFound = false
-                val wrappedCallback: (ExtractorLink) -> Unit = { link ->
-                    linkFound = true
+                var found = false
+                val wrapped: (ExtractorLink) -> Unit = { link ->
+                    found = true
                     callback(link)
                 }
-
                 try {
-                    loadExtractor(iframe, data, subtitleCallback, wrappedCallback)
+                    loadExtractor(iframe, data, subtitleCallback, wrapped)
                 } catch (e: Throwable) {
-                    Log.e("HDCH", "loadExtractor fail: ${e.message}")
+                    Log.e("HDCH", "loadExtractor: ${e.message}")
                 }
 
-                // Extractor başarısızsa manuel çıkarım
-                if (!linkFound) {
-                    Log.d("HDCH", "extractor başarısız, manuel deneniyor → $iframe")
-                    tryManualExtract(iframe, data, source, subtitleCallback, callback)
+                if (!found) {
+                    Log.d("HDCH", "manuel: $iframe")
+                    manualExtract(iframe, data, source, subtitleCallback, callback)
                 }
             }
         }
         return true
     }
 
-    // loadExtractor başarısız olduğunda manuel çıkarım yapar
-    private suspend fun tryManualExtract(
+    private suspend fun manualExtract(
         iframeUrl: String,
         referer: String,
         sourceLabel: String,
@@ -283,104 +290,120 @@ class HDFilmCehennemi : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ) {
         try {
-            val embedResponse = app.get(iframeUrl, referer = referer, interceptor = interceptor)
-            val embedText = embedResponse.text
+            val html = app.get(iframeUrl, referer = referer, interceptor = interceptor).text
+            val doc = Jsoup.parse(html)
+            Log.d("HDCH", "[manuel] len=${html.length} m3u8=${html.contains("m3u8")} dc_hello=${html.contains("dc_hello")} dc_new=${html.contains("dc_new")}")
 
-            Log.d("HDCH", "[manuel] $iframeUrl uzunluk=${embedText.length} m3u8=${embedText.contains("m3u8")}")
-
-            // Altyazılar
             Regex("""["']?file["']?\s*:\s*["']([^"']+\.(?:vtt|srt))["']\s*,\s*["']?label["']?\s*:\s*["']([^"']+)["']""")
-                .findAll(embedText).forEach { match ->
-                    subtitleCallback.invoke(SubtitleFile(match.groupValues[2], match.groupValues[1]))
+                .findAll(html).forEach { m ->
+                    subtitleCallback.invoke(SubtitleFile(m.groupValues[2], m.groupValues[1]))
                 }
 
-            // dc_hello
+            var unpacked = html
+            for (script in doc.select("script")) {
+                val data = try { "" + script.data() } catch (e: Throwable) { continue }
+                if (data.contains("eval(function(p,a,c,k,e,d)")) {
+                    unpacked = try {
+                        val clazz = Class.forName("com.lagradost.common.JsUnpacker")
+                        val ctor = clazz.getConstructor(String::class.java)
+                        val inst = ctor.newInstance(data)
+                        (clazz.getMethod("unpack").invoke(inst) as? String) ?: data
+                    } catch (e: Throwable) { data }
+                    break
+                }
+            }
+
             Regex("""dc_hello\(\s*\[([^\]]+)\]\s*\)|dc_hello\(\s*["']([^"']+)["']\s*\)""")
-                .find(embedText)?.let { match ->
-                    val rawParts = match.groupValues[1].ifEmpty { match.groupValues[2] }
-                    val joined = rawParts.replace("\"", "").replace("'", "")
-                        .replace(",", "").replace(" ", "")
+                .find(unpacked)?.let { m ->
+                    val raw = m.groupValues[1].ifEmpty { m.groupValues[2] }
+                    val joined = raw.replace("\"", "").replace("'", "").replace(",", "").replace(" ", "")
                     val link = dcHello(joined)
                     if (link.startsWith("http")) {
-                        Log.d("HDCH", "[manuel] dc_hello → $link")
-                        M3u8Helper.generateM3u8(
-                            source = "$name ($sourceLabel)",
-                            streamUrl = link,
-                            referer = iframeUrl
-                        ).forEach(callback)
+                        emitLink(link, iframeUrl, sourceLabel, callback)
                         return
                     }
                 }
 
-            // dc_new
-            Regex("""dc_new\(\s*\[([^\]]+)\]\s*\)""").find(embedText)?.let { match ->
-                val parts = Regex("""["']([^"']+)["']""")
-                    .findAll(match.groupValues[1]).map { it.groupValues[1] }.toList()
+            Regex("""dc_new\(\s*\[([^\]]+)\]\s*\)""").find(unpacked)?.let { m ->
+                val parts = Regex("""["']([^"']+)["']""").findAll(m.groupValues[1]).map { it.groupValues[1] }.toList()
                 if (parts.isNotEmpty()) {
                     val link = dcNew(parts)
                     if (link.startsWith("http")) {
-                        Log.d("HDCH", "[manuel] dc_new → $link")
-                        M3u8Helper.generateM3u8(
-                            source = "$name ($sourceLabel)",
-                            streamUrl = link,
-                            referer = iframeUrl
-                        ).forEach(callback)
+                        emitLink(link, iframeUrl, sourceLabel, callback)
                         return
                     }
                 }
             }
 
-            // Doğrudan m3u8/mp4
-            Regex("""["'](https?://[^"']+\.(?:m3u8|mp4)[^"']*)["']""").find(embedText)?.let { match ->
-                Log.d("HDCH", "[manuel] direct → ${match.groupValues[1]}")
-                M3u8Helper.generateM3u8(
-                    source = "$name ($sourceLabel)",
-                    streamUrl = match.groupValues[1],
-                    referer = iframeUrl
-                ).forEach(callback)
+            Regex("""["'](https?://[^"']+\.(?:m3u8|mp4)[^"']*)["']""").find(unpacked)?.let { m ->
+                emitLink(m.groupValues[1], iframeUrl, sourceLabel, callback)
                 return
             }
-
-            Log.e("HDCH", "[manuel] hiçbir yöntem işe yaramadı")
+            Regex("""https?://[^\s"'<>]+\.m3u8[^\s"'<>]*""").find(unpacked)?.let { m ->
+                emitLink(m.value, iframeUrl, sourceLabel, callback)
+            }
         } catch (e: Throwable) {
-            Log.e("HDCH", "[manuel] hata: ${e.message}")
+            Log.e("HDCH", "[manuel] ${e.message}")
         }
     }
 
-    private fun dcHello(base64Input: String): String {
+    private fun emitLink(
+        link: String,
+        iframeUrl: String,
+        sourceLabel: String,
+        callback: (ExtractorLink) -> Unit
+    ) {
+        try {
+            callback.invoke(
+                newExtractorLink(
+                    source = "$name ($sourceLabel)",
+                    name = "$name ($sourceLabel)",
+                    url = link,
+                    type = ExtractorLinkType.M3U8
+                ) {
+                    this.referer = iframeUrl
+                    this.quality = Qualities.Unknown.value
+                }
+            )
+            Log.d("HDCH", "[manuel] ✅ $link")
+        } catch (e: Throwable) {
+            Log.e("HDCH", "emitLink ${e.message}")
+        }
+    }
+
+    private fun dcHello(input: String): String {
         return try {
-            val decodedOnce = base64Decode(base64Input)
-            val reversedString = decodedOnce.reversed()
-            val decodedTwice = base64Decode(reversedString)
+            val d1 = String(Base64.decode(input, Base64.DEFAULT), Charsets.ISO_8859_1)
+            val d2 = String(Base64.decode(d1.reversed(), Base64.DEFAULT), Charsets.ISO_8859_1)
             when {
-                decodedTwice.contains("+") -> decodedTwice.substringAfterLast("+")
-                decodedTwice.contains(" ") -> decodedTwice.substringAfterLast(" ")
-                decodedTwice.contains("|") -> decodedTwice.substringAfterLast("|")
-                else -> decodedTwice
+                d2.contains("+") -> d2.substringAfterLast("+")
+                d2.contains(" ") -> d2.substringAfterLast(" ")
+                d2.contains("|") -> d2.substringAfterLast("|")
+                else -> d2
             }
         } catch (e: Throwable) { "" }
     }
 
     private fun dcNew(parts: List<String>): String {
         return try {
-            val value = parts.joinToString("")
-            val decodedBytes = base64DecodeArray(value)
-            val rot13Bytes = decodedBytes.map { byte ->
-                val c = byte.toInt() and 0xFF
+            val joined = parts.joinToString("")
+            val decoded = Base64.decode(joined, Base64.DEFAULT)
+            val rot13 = decoded.map { b ->
+                val c = b.toInt() and 0xFF
                 when (c) {
                     in 'a'.code..'z'.code -> (((c - 'a'.code + 13) % 26) + 'a'.code).toByte()
                     in 'A'.code..'Z'.code -> (((c - 'A'.code + 13) % 26) + 'A'.code).toByte()
-                    else -> byte
+                    else -> b
                 }
             }.toByteArray()
-            val reversedBytes = rot13Bytes.reversedArray()
-            val unmixedBytes = ByteArray(reversedBytes.size)
-            for (i in reversedBytes.indices) {
-                val charCode = reversedBytes[i].toInt() and 0xFF
-                val offset = 399756995 % (i + 5)
-                unmixedBytes[i] = floorMod(charCode - offset, 256).toByte()
+            val rev = rot13.reversedArray()
+            val out = ByteArray(rev.size)
+            for (i in rev.indices) {
+                val cc = rev[i].toInt() and 0xFF
+                val off = 399756995 % (i + 5)
+                out[i] = floorMod(cc - off, 256).toByte()
             }
-            String(unmixedBytes, Charsets.ISO_8859_1)
+            String(out, Charsets.ISO_8859_1)
         } catch (e: Throwable) { "" }
     }
 
