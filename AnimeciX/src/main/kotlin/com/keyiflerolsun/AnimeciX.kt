@@ -52,6 +52,8 @@ class AnimeciX : MainAPI() {
             }
         } ?: emptyList()
 
+        Log.d("ACX", "${request.name}: ${home.size} içerik")
+
         return newHomePageResponse(request.name, home)
     }
 
@@ -91,6 +93,13 @@ class AnimeciX : MainAPI() {
         val episodes = mutableListOf<Episode>()
         val titleId = response.title.id
 
+        Log.d(
+            "ACX",
+            "Başlık: ${response.title.title}, tür: ${response.title.titleType}, " +
+                "film videoları: ${response.title.videos.size}, " +
+                "sezon: ${response.title.seasons.size}"
+        )
+
         if (response.title.titleType == "anime") {
             for (season in response.title.seasons) {
                 val seasonResponse = app.get(
@@ -98,23 +107,26 @@ class AnimeciX : MainAPI() {
                         "?episode=1" +
                         "&season=${season.number}" +
                         "&videoId=0" +
-                        "&titleId=$titleId"
+                        "&titleId=$titleId",
+                    headers = apiHeaders
                 ).parsedSafe<TitleVideos>()
 
                 if (seasonResponse == null) {
-                    Log.e(
-                        "ACX",
-                        "Sezon bilgileri okunamadı: ${season.number}"
-                    )
+                    Log.e("ACX", "Sezon ${season.number} okunamadı")
                     continue
                 }
+
+                Log.d(
+                    "ACX",
+                    "Sezon ${season.number}: ${seasonResponse.videos.size} bölüm"
+                )
 
                 for (video in seasonResponse.videos) {
                     episodes.add(
                         newEpisode(video.url) {
                             this.name =
                                 "${video.seasonNum}. Sezon " +
-                                "${video.episodeNum}. Bölüm"
+                                    "${video.episodeNum}. Bölüm"
                             this.season = video.seasonNum
                             this.episode = video.episodeNum
                         }
@@ -184,7 +196,6 @@ class AnimeciX : MainAPI() {
 
             val path = URI(videoUrl).path.orEmpty()
 
-            // Doğrudan medya adresini indirmeden oynatıcıya gönder.
             if (
                 path.endsWith(".m3u8", ignoreCase = true) ||
                 path.endsWith(".mp4", ignoreCase = true)
@@ -203,7 +214,6 @@ class AnimeciX : MainAPI() {
                 return true
             }
 
-            // Önce kayıtlı extractor'ları doğrudan dene.
             try {
                 loadExtractor(
                     videoUrl,
@@ -222,7 +232,6 @@ class AnimeciX : MainAPI() {
                 return true
             }
 
-            // Extractor sonuç vermediyse yönlendirmeyi takip et.
             val response = app.get(
                 videoUrl,
                 referer = refererUrl
