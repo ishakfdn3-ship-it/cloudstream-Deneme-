@@ -122,11 +122,7 @@ class HotstreamExtractor : ExtractorApi() {
                 return
             }
 
-            /*
-             * Teşhis isteği:
-             * Listeye Cloudstream'in ağ istemcisiyle erişilebiliyor mu?
-             * Yanıtın adresi veya içeriği loga yazılmaz.
-             */
+            // Teşhis: oynatma listesi ağ istemcisiyle açılıyor mu?
             try {
                 val test = app.get(
                     videoUrl,
@@ -142,8 +138,9 @@ class HotstreamExtractor : ExtractorApi() {
                 )
 
                 val isHls = test.text
-                    .trimStart('﻿', ' ', '
-', '\r', '\t')
+                    .trimStart {
+                        it.isWhitespace() || it.code == 65279
+                    }
                     .startsWith("#EXTM3U")
 
                 Log.d(
@@ -160,10 +157,6 @@ class HotstreamExtractor : ExtractorApi() {
                 )
             }
 
-            /*
-             * Test başarısız olsa da bağlantıyı oynatıcıya gönderiyoruz.
-             * Böylece önceki davranış korunur ve log karşılaştırılabilir.
-             */
             callback(
                 newExtractorLink(
                     source = name,
@@ -180,8 +173,6 @@ class HotstreamExtractor : ExtractorApi() {
             )
 
             Log.d("UFILM", "Hotstream bağlantısı oynatıcıya gönderildi")
-
-            // Altyazı biçimi henüz doğrulanmadı.
 
         } catch (e: CancellationException) {
             throw e
