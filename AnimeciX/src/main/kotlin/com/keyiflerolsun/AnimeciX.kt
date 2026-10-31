@@ -7,10 +7,13 @@ import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
 import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
 import com.lagradost.cloudstream3.utils.*
-import java.util.concurrent.CancellationException
+import org.json.JSONArray
 import java.net.URI
+import java.net.URLEncoder
+import java.util.concurrent.CancellationException
 
 class AnimeciX : MainAPI() {
+
     override var mainUrl = "https://animecix.tv"
     override var name = "AnimeciX"
     override val hasMainPage = true
@@ -54,7 +57,7 @@ class AnimeciX : MainAPI() {
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val encodedQuery = java.net.URLEncoder
+        val encodedQuery = URLEncoder
             .encode(query, "UTF-8")
             .replace("+", "%20")
 
@@ -77,6 +80,36 @@ class AnimeciX : MainAPI() {
         return search(query)
     }
 
+    private fun packSources(urls: List<String>): String {
+        val array = JSONArray()
+
+        urls
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .forEach { array.put(it) }
+
+        return "acx_sources:$array"
+    }
+
+    private fun unpackSources(data: String): List<String> {
+        if (!data.startsWith("acx_sources:")) {
+            // Eski tek kaynaklı kayıtlarla uyumluluk.
+            return listOf(data.trim()).filter { it.isNotBlank() }
+        }
+
+        val json = data.removePrefix("acx_sources:")
+        val array = JSONArray(json)
+
+        return (0 until array.length())
+            .mapNotNull { index ->
+                array.optString(index)
+                    .trim()
+                    .takeIf { it.isNotBlank() }
+            }
+            .distinct()
+    }
+
     override suspend fun load(url: String): LoadResponse? {
         val response = app.get(
             url,
@@ -87,7 +120,7 @@ class AnimeciX : MainAPI() {
         }
 
         val episodes = mutableListOf<Episode>()
-        val titleId = url.substringAfter("?titleId=").substringBefore("&")
+        val titleId = response.title.id
 
         if (response.title.titleType == "anime") {
             for (season in response.title.seasons) {
@@ -100,40 +133,103 @@ class AnimeciX : MainAPI() {
                 ).parsedSafe<TitleVideos>()
 
                 if (seasonResponse == null) {
-                    Log.e("ACX", "Sezon bilgileri okunamadı: ${season.number}")
+                    Log.e(
+                        "ACX",
+                        "Sezon bilgileri okunamadı: ${season.number}"
+                    )
                     continue
                 }
 
-                for (video in seasonResponse.videos) {
-                    episodes.add(
-                        newEpisode(video.url) {
-                            this.name =
-                                "${video.seasonNum}. Sezon ${video.episodeNum}. Bölüm"
-                            this.season = video.seasonNum
-                            this.episode = video.episodeNum
+                /*
+                 * Bölüm numarası olan kayıtları sezon + bölüm
+                 * numarasına göre grupla.
+                 *
+                 * Bölüm numarası olmayan kayıtları ayrı tut:
+                 * ilgisiz videoları yanlışlıkla birleştirmeyelim.
+                 */
+                val groupedVideos = seasonResponse.videos
+                    .withIndex()
+                    .groupBy { indexedVideo ->
+                        val video = indexedVideo.value
+
+                        if (video.episodeNum == null) {
+                            "unknown-${indexedVideo.index}"
+                        } else {
+                            val seasonNumber =
+                                video.seasonNum ?: season.number
+
+                            "$seasonNumber-${video.episodeNum}"
                         }
+                    }
+
+                for ((_, indexedVideos) in groupedVideos) {
+                    val videos = indexedVideos.map { it.value }
+                    val firstVideo = videos.firstOrNull() ?: continue
+
+                    val sourceUrls = videos
+                        .map { it.url }
+                        .filter { it.isNotBlank() }
+                        .distinct()
+
+                    if (sourceUrls.isEmpty()) {
+                        continue
+                    }
+
+                    val seasonNumber =
+                        firstVideo.seasonNum ?: season.number
+
+                    val episodeNumber = firstVideo.episodeNum
+                    val episodeData = packSources(sourceUrls)
+
+                    episodes.add(
+                        newEpisode(episodeData) {
+                            this.name = if (episodeNumber != null) {
+                                "$seasonNumber. Sezon $episodeNumber. Bölüm"
+                            } else {
+                                "$seasonNumber. Sezon Bölüm"
+                            }
+
+                            this.season = seasonNumber
+                            this.episode = episodeNumber
+                        }
+                    )
+
+                    Log.d(
+                        "ACX",
+                        "Sezon $seasonNumber, bölüm $episodeNumber: " +
+                            "${sourceUrls.size} kaynak"
                     )
                 }
             }
         } else {
-            val video = response.title.videos.firstOrNull()
+            val sourceUrls = response.title.videos
+                .map { it.url }
+                .filter { it.isNotBlank() }
+                .distinct()
 
-            if (video != null) {
+            if (sourceUrls.isEmpty()) {
+                Log.e("ACX", "Film için video kaydı bulunamadı")
+            } else {
+                val episodeData = packSources(sourceUrls)
+
                 episodes.add(
-                    newEpisode(video.url) {
+                    newEpisode(episodeData) {
                         this.name = "Filmi İzle"
                         this.season = 1
                         this.episode = 1
                     }
                 )
-            } else {
-                Log.e("ACX", "Film için video kaydı bulunamadı")
+
+                Log.d(
+                    "ACX",
+                    "Film için ${sourceUrls.size} kaynak bulundu"
+                )
             }
         }
 
         return newTvSeriesLoadResponse(
             response.title.title,
-            "$mainUrl/secure/titles/${response.title.id}?titleId=${response.title.id}",
+            "$mainUrl/secure/titles/$titleId?titleId=$titleId",
             TvType.Anime,
             episodes
         ) {
@@ -158,69 +254,106 @@ class AnimeciX : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        if (data.isBlank()) {
-            Log.e("ACX", "Video adresi boş")
+        val sourceUrls = try {
+            unpackSources(data)
+        } catch (e: Exception) {
+            Log.e("ACX", "Kaynak listesi okunamadı", e)
             return false
         }
 
-        return try {
-            // Tam URL'leri korur, göreli yolları site adresine göre çözer.
-            val videoUrl = URI("$mainUrl/").resolve(data.trim()).toString()
-            val refererUrl = "$mainUrl/"
-
-            val response = app.get(
-                videoUrl,
-                referer = refererUrl
-            )
-
-            Log.d("ACX", "Video yanıt kodu: ${response.code}")
-
-            if (response.code !in 200..299) {
-                Log.e("ACX", "Video isteği başarısız")
-                return false
-            }
-
-            val finalUrl = response.url
-            val path = URI(finalUrl).path.orEmpty()
-
-            var found = false
-
-            val wrappedCallback: (ExtractorLink) -> Unit = { link ->
-                found = true
-                callback(link)
-            }
-
-            if (
-                path.endsWith(".m3u8", ignoreCase = true) ||
-                path.endsWith(".mp4", ignoreCase = true)
-            ) {
-                wrappedCallback(
-                    newExtractorLink(
-                        source = name,
-                        name = name,
-                        url = finalUrl,
-                        type = INFER_TYPE
-                    ) {
-                        this.referer = refererUrl
-                        this.quality = Qualities.Unknown.value
-                    }
-                )
-            } else {
-                loadExtractor(
-                    finalUrl,
-                    refererUrl,
-                    subtitleCallback,
-                    wrappedCallback
-                )
-            }
-
-            Log.d("ACX", "Bağlantı bulundu: $found")
-            found
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.e("ACX", "Video bağlantısı çıkarılamadı", e)
-            false
+        if (sourceUrls.isEmpty()) {
+            Log.e("ACX", "Kaynak listesi boş")
+            return false
         }
+
+        Log.d("ACX", "İşlenecek kaynak sayısı: ${sourceUrls.size}")
+
+        val refererUrl = "$mainUrl/"
+        var foundAny = false
+
+        for ((index, source) in sourceUrls.withIndex()) {
+            try {
+                val sourceUrl = URI(refererUrl)
+                    .resolve(source)
+                    .toString()
+
+                val sourcePath = URI(sourceUrl).path.orEmpty()
+
+                // Doğrudan medya adreslerini önce indirmeye çalışma.
+                val finalUrl = if (
+                    sourcePath.endsWith(".m3u8", ignoreCase = true) ||
+                    sourcePath.endsWith(".mp4", ignoreCase = true)
+                ) {
+                    sourceUrl
+                } else {
+                    val response = app.get(
+                        sourceUrl,
+                        referer = refererUrl
+                    )
+
+                    Log.d(
+                        "ACX",
+                        "Kaynak ${index + 1} HTTP: ${response.code}"
+                    )
+
+                    if (response.code !in 200..299) {
+                        Log.e(
+                            "ACX",
+                            "Kaynak ${index + 1} isteği başarısız"
+                        )
+                        continue
+                    }
+
+                    response.url
+                }
+
+                val finalPath = URI(finalUrl).path.orEmpty()
+
+                val wrappedCallback: (ExtractorLink) -> Unit = { link ->
+                    foundAny = true
+                    callback(link)
+                }
+
+                if (
+                    finalPath.endsWith(".m3u8", ignoreCase = true) ||
+                    finalPath.endsWith(".mp4", ignoreCase = true)
+                ) {
+                    wrappedCallback(
+                        newExtractorLink(
+                            source = name,
+                            name = "$name Kaynak ${index + 1}",
+                            url = finalUrl,
+                            type = INFER_TYPE
+                        ) {
+                            this.referer = refererUrl
+                            this.quality = Qualities.Unknown.value
+                        }
+                    )
+                } else {
+                    /*
+                     * Kayıtlı extractor'ları kullanır.
+                     * AnimeciXPlugin.kt içindeki TauVideo kaydı da
+                     * bu aşamada kullanılabilir.
+                     */
+                    loadExtractor(
+                        finalUrl,
+                        refererUrl,
+                        subtitleCallback,
+                        wrappedCallback
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(
+                    "ACX",
+                    "Kaynak ${index + 1} işlenemedi",
+                    e
+                )
+            }
+        }
+
+        Log.d("ACX", "En az bir bağlantı bulundu: $foundAny")
+        return foundAny
     }
 }
