@@ -374,7 +374,7 @@
     },
     {
         "iconUrl": "https://www.google.com/s2/favicons?domain=ufilmizle.com&sz=%size%",
-        "fileHash": "sha256-a7420bc79316bfabf0e73fc6eba8a72235d5a845ad5933a12809816aba39285d",
+        "fileHash": "sha256-d4a197f44c99c1a6157f2124b14cfe1e47a0c1e32f5ef2e817aaeb03deaa64f4",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/ishakfdn3-ship-it/cloudstream-Deneme-",
         "fileSize": 22432,
@@ -387,7 +387,7 @@
             "Movie",
             "TvSeries"
         ],
-        "version": 1,
+        "version": 2,
         "internalName": "ufilmizle",
         "description": "Ufilm \u0130zle film ve dizi eklentisi",
         "url": "https://raw.githubusercontent.com/ishakfdn3-ship-it/cloudstream-Deneme-/builds/ufilmizle.cs3",
