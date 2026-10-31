@@ -41,7 +41,7 @@ class HotstreamExtractor : ExtractorApi() {
                 referer = referer ?: "https://ufilmizle.com/"
             )
 
-            Log.d("UFILM", "Hotstream HTTP: ${response.code}")
+            Log.d("UFILM", "Hotstream embed HTTP: ${response.code}")
 
             if (response.code !in 200..299) {
                 Log.e("UFILM", "Hotstream sayfası açılamadı")
@@ -50,6 +50,7 @@ class HotstreamExtractor : ExtractorApi() {
 
             val html = response.text
 
+            // Beklenen biçim:
             // bePlayer('hash', '{"ct":"...","iv":"...","s":"..."}')
             val playerCall = Regex(
                 """bePlayer\s*\(\s*('(?:\\.|[^'\\])*')\s*,\s*('(?:\\.|[^'\\])*')""",
@@ -121,6 +122,48 @@ class HotstreamExtractor : ExtractorApi() {
                 return
             }
 
+            /*
+             * Teşhis isteği:
+             * Listeye Cloudstream'in ağ istemcisiyle erişilebiliyor mu?
+             * Yanıtın adresi veya içeriği loga yazılmaz.
+             */
+            try {
+                val test = app.get(
+                    videoUrl,
+                    referer = url,
+                    headers = mapOf(
+                        "User-Agent" to chromeUserAgent
+                    )
+                )
+
+                Log.d(
+                    "UFILM",
+                    "Oynatma listesi HTTP: ${test.code}"
+                )
+
+                val isHls = test.text
+                    .trimStart('﻿', ' ', '
+', '\r', '\t')
+                    .startsWith("#EXTM3U")
+
+                Log.d(
+                    "UFILM",
+                    "Oynatma listesi HLS mi: $isHls"
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(
+                    "UFILM",
+                    "Oynatma listesi test isteği başarısız: " +
+                        e.javaClass.simpleName
+                )
+            }
+
+            /*
+             * Test başarısız olsa da bağlantıyı oynatıcıya gönderiyoruz.
+             * Böylece önceki davranış korunur ve log karşılaştırılabilir.
+             */
             callback(
                 newExtractorLink(
                     source = name,
@@ -128,20 +171,17 @@ class HotstreamExtractor : ExtractorApi() {
                     url = videoUrl,
                     type = ExtractorLinkType.M3U8
                 ) {
-                    // Tarayıcıdaki HLS isteğinin Referer değeri.
                     this.referer = url
                     this.quality = Qualities.Unknown.value
-
                     this.headers = mapOf(
                         "User-Agent" to chromeUserAgent
                     )
                 }
             )
 
-            Log.d("UFILM", "Hotstream video bağlantısı çıkarıldı")
+            Log.d("UFILM", "Hotstream bağlantısı oynatıcıya gönderildi")
 
-            // Altyazı biçimi henüz doğrulanmadığı için
-            // subtitleCallback bu sürümde kullanılmıyor.
+            // Altyazı biçimi henüz doğrulanmadı.
 
         } catch (e: CancellationException) {
             throw e
