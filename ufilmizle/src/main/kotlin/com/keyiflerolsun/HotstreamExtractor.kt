@@ -24,6 +24,11 @@ class HotstreamExtractor : ExtractorApi() {
     override val mainUrl = "https://hotstream.club"
     override val requiresReferer = true
 
+    private val chromeUserAgent =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+            "AppleWebKit/537.36 (KHTML, like Gecko) " +
+            "Chrome/156.0.0.0 Safari/537.36"
+
     override suspend fun getUrl(
         url: String,
         referer: String?,
@@ -45,12 +50,7 @@ class HotstreamExtractor : ExtractorApi() {
 
             val html = response.text
 
-            /*
-             * Beklenen biçim:
-             * bePlayer('hash', '{"ct":"...","iv":"...","s":"..."}')
-             *
-             * Gönderdiğin örnekte iki parametre tek tırnak içindeydi.
-             */
+            // bePlayer('hash', '{"ct":"...","iv":"...","s":"..."}')
             val playerCall = Regex(
                 """bePlayer\s*\(\s*('(?:\\.|[^'\\])*')\s*,\s*('(?:\\.|[^'\\])*')""",
                 RegexOption.DOT_MATCHES_ALL
@@ -61,7 +61,6 @@ class HotstreamExtractor : ExtractorApi() {
                 return
             }
 
-            // JavaScript string içindeki kaçış karakterlerini çözer.
             val hash = JSONTokener(playerCall.groupValues[1])
                 .nextValue() as? String
 
@@ -82,11 +81,6 @@ class HotstreamExtractor : ExtractorApi() {
 
             val salt = hexToBytes(params.getString("s"))
 
-            /*
-             * CryptoJS AES.decrypt(set, hash) bir parola kullanır.
-             * Varsayılan CryptoJS/OpenSSL türetmesi:
-             * MD5 ile 32 bayt anahtar + 16 bayt IV.
-             */
             val keyAndIv = deriveKeyAndIv(
                 hash.toByteArray(Charsets.UTF_8),
                 salt
@@ -96,8 +90,13 @@ class HotstreamExtractor : ExtractorApi() {
 
             cipher.init(
                 Cipher.DECRYPT_MODE,
-                SecretKeySpec(keyAndIv.copyOfRange(0, 32), "AES"),
-                IvParameterSpec(keyAndIv.copyOfRange(32, 48))
+                SecretKeySpec(
+                    keyAndIv.copyOfRange(0, 32),
+                    "AES"
+                ),
+                IvParameterSpec(
+                    keyAndIv.copyOfRange(32, 48)
+                )
             )
 
             val decrypted = cipher.doFinal(ciphertext)
@@ -105,7 +104,9 @@ class HotstreamExtractor : ExtractorApi() {
 
             val settings = JSONObject(decrypted)
 
-            val rawVideo = settings.optString("video_location").trim()
+            val rawVideo = settings
+                .optString("video_location")
+                .trim()
 
             if (rawVideo.isBlank()) {
                 Log.e("UFILM", "video_location alanı boş")
@@ -127,16 +128,21 @@ class HotstreamExtractor : ExtractorApi() {
                     url = videoUrl,
                     type = ExtractorLinkType.M3U8
                 ) {
-                    // Tarayıcıdaki HLS isteğinde referer embed sayfasıydı.
+                    // Tarayıcıdaki HLS isteğinin Referer değeri.
                     this.referer = url
                     this.quality = Qualities.Unknown.value
+
+                    this.headers = mapOf(
+                        "User-Agent" to chromeUserAgent
+                    )
                 }
             )
 
             Log.d("UFILM", "Hotstream video bağlantısı çıkarıldı")
 
-            // Altyazıların biçimi henüz doğrulanmadığı için
-            // bu sürümde subtitleCallback kullanılmıyor.
+            // Altyazı biçimi henüz doğrulanmadığı için
+            // subtitleCallback bu sürümde kullanılmıyor.
+
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
