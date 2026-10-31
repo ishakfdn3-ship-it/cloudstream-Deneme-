@@ -16,21 +16,19 @@ class UFilm : MainAPI() {
 
     override val hasMainPage = true
     override val hasQuickSearch = false
+
     override val supportedTypes = setOf(
         TvType.Movie,
         TvType.TvSeries
     )
 
     override val mainPage = mainPageOf(
-        "$mainUrl/" to "Son Eklenenler"
+        "$mainUrl/" to "Son Eklenenler",
+        "$mainUrl/kategori/romantik/" to "Romantik",
+        "$mainUrl/ulke/turkiye/" to "Türkiye",
+        "$mainUrl/yil/2019/" to "2019 Filmleri"
     )
 
-    /**
-     * Sayfadaki film kartlarını okur.
-     *
-     * Sitede dizi ve filmler aynı listede bulunabiliyor.
-     * İçerik tipi detay sayfasında bölüm listesine göre belirlenir.
-     */
     private fun parseResults(doc: Document): List<SearchResponse> {
         val foundUrls = mutableSetOf<String>()
 
@@ -76,7 +74,7 @@ class UFilm : MainAPI() {
         val url = if (page <= 1) {
             request.data
         } else {
-            "$mainUrl/page/$page/"
+            "${request.data.trimEnd('/')}/page/$page/"
         }
 
         return try {
@@ -86,7 +84,10 @@ class UFilm : MainAPI() {
 
             val results = parseResults(response.document)
 
-            Log.d("UFILM", "Ana sayfa $page: ${results.size} içerik")
+            Log.d(
+                "UFILM",
+                "${request.name}, sayfa $page: ${results.size} içerik"
+            )
 
             newHomePageResponse(request.name, results)
         } catch (e: CancellationException) {
@@ -124,7 +125,9 @@ class UFilm : MainAPI() {
 
             Log.d("UFILM", "Detay sayfası HTTP: ${response.code}")
 
-            val title = doc.selectFirst("h1")?.text()?.trim()
+            val title = doc.selectFirst("h1")
+                ?.text()
+                ?.trim()
                 ?.takeIf { it.isNotBlank() }
                 ?: return null
 
@@ -144,8 +147,6 @@ class UFilm : MainAPI() {
                 ?.value
                 ?.toIntOrNull()
 
-            // Örnek dizi sayfasında aktif bölüm bir span,
-            // diğer bölümler post-page-numbers bağlantılarıydı.
             val currentLabel = doc
                 .selectFirst(".filmplus_sources .current_dil")
                 ?.text()
@@ -171,21 +172,27 @@ class UFilm : MainAPI() {
                 val episodes = mutableListOf<Episode>()
                 val seenUrls = mutableSetOf<String>()
 
-                // Site farklı sezonları farklı içerik sayfalarında
-                // sunabilir. Sayfa başlığında sezon yoksa 1 kullanılır.
                 val season = Regex(
                     """(\d+)\s*[.\-]?\s*sezon""",
                     RegexOption.IGNORE_CASE
-                ).find(title)?.groupValues?.get(1)?.toIntOrNull() ?: 1
+                ).find(title)
+                    ?.groupValues
+                    ?.get(1)
+                    ?.toIntOrNull()
+                    ?: 1
 
                 fun addEpisode(
                     episodeUrl: String,
                     label: String
                 ) {
                     val fixedUrl = fixUrlNull(episodeUrl) ?: return
-                    if (!seenUrls.add(fixedUrl)) return
 
-                    val episodeNumber = episodePattern.find(label)
+                    if (!seenUrls.add(fixedUrl)) {
+                        return
+                    }
+
+                    val episodeNumber = episodePattern
+                        .find(label)
                         ?.groupValues
                         ?.get(1)
                         ?.toIntOrNull()
@@ -206,7 +213,6 @@ class UFilm : MainAPI() {
                     )
                 }
 
-                // Aktif bölümün adresi mevcut sayfanın kendisidir.
                 addEpisode(url, currentLabel)
 
                 episodeLinks.forEach { link ->
