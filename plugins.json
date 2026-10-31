@@ -373,6 +373,27 @@
         "name": "TurkAnime"
     },
     {
+        "iconUrl": "https://www.google.com/s2/favicons?domain=ufilmizle.com&sz=%size%",
+        "fileHash": "sha256-69390c281175dcdf4655d352ebeaa0f0bda5a23f448f2aec8476db5ecfd425e6",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/ishakfdn3-ship-it/cloudstream-Deneme-",
+        "fileSize": 17119,
+        "status": 3,
+        "language": "tr",
+        "authors": [
+            "ishakfdn3"
+        ],
+        "tvTypes": [
+            "Movie",
+            "TvSeries"
+        ],
+        "version": 1,
+        "internalName": "ufilmizle",
+        "description": "Ufilm \u0130zle film ve dizi eklentisi",
+        "url": "https://raw.githubusercontent.com/ishakfdn3-ship-it/cloudstream-Deneme-/builds/ufilmizle.cs3",
+        "name": "ufilmizle"
+    },
+    {
         "iconUrl": "https://www.google.com/s2/favicons?domain=webteizle2.com&sz=%size%",
         "fileHash": "sha256-1319e6b10e639e240f2f675adaad96efe14d6468ede16eb8f286daa7b101bbd6",
         "apiVersion": 1,
