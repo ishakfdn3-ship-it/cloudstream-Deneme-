@@ -1,10 +1,10 @@
 [
     {
         "iconUrl": "https://www.google.com/s2/favicons?domain=animecix.net&sz=%size%",
-        "fileHash": "sha256-9797054d2eecf1dfd6d9b4a28f7ce480892f78be8b94415b8f17825244f6caea",
+        "fileHash": "sha256-f3a8f174c16a91b62c9336bb29609e94819ebd7430ec76a5b23c9d0edb6482ca",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/ishakfdn3-ship-it/cloudstream-Deneme-",
-        "fileSize": 22920,
+        "fileSize": 25170,
         "status": 1,
         "language": "tr",
         "authors": [
@@ -224,28 +224,6 @@
         "description": "Sinema zevkini evinize kadar getirdik. T\u00fcrkiye'nin lider Film sitesinde, en yeni filmleri Full HD izleyin.",
         "url": "https://raw.githubusercontent.com/ishakfdn3-ship-it/cloudstream-Deneme-/builds/FullHDFilmizlesene.cs3",
         "name": "FullHDFilmizlesene"
-    },
-    {
-        "iconUrl": "https://www.google.com/s2/favicons?domain=hdfilmcehennemi.com&sz=%size%",
-        "fileHash": "sha256-737c7e563e5ed7859174413c25554b06da607c75750a8cb8cca0345ee872919d",
-        "apiVersion": 1,
-        "repositoryUrl": "https://github.com/ishakfdn3-ship-it/cloudstream-Deneme-",
-        "fileSize": 30121,
-        "status": 1,
-        "language": "tr",
-        "authors": [
-            "hexated",
-            "keyiflerolsun"
-        ],
-        "tvTypes": [
-            "Movie",
-            "TvSeries"
-        ],
-        "version": 18,
-        "internalName": "HDFilmCehennemi",
-        "description": "T\u00fcrkiye'nin en h\u0131zl\u0131 hd film izleme sitesi",
-        "url": "https://raw.githubusercontent.com/ishakfdn3-ship-it/cloudstream-Deneme-/builds/HDFilmCehennemi.cs3",
-        "name": "HDFilmCehennemi"
     },
     {
         "iconUrl": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEh3vCp6N1K4bECoYRQD-cisJF2_6V_Hk01ZhDmoPR2JuM8O5qr4MqrPO1munM9cRlleBBSK6odYhLtDBWv4E3vhPhynlmS5hVVtJZShHoGA5REQ8_3v8SIlccTEqzVQu2UJyNYQdJNrKIfWy66RQeT0D-CcmFCbHPz5023H6p2v5fv4NVloZ5Rqo_yGrIY/s320/iNat-Box-App.png",
