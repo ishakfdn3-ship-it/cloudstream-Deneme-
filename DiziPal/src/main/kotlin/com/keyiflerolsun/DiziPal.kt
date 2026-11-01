@@ -118,9 +118,27 @@ class DiziPal : MainAPI() {
             // Teşhis satırı: loga bakmadan ekranda sebebi göster
             val debugTitle = "⚠ HTTP ${response.code} | ${document.title().take(40)} | " +
                 "${document.html().length} bayt | ${response.url.take(50)}"
-            val debugItem = newMovieSearchResponse(debugTitle, request.data, TvType.Movie)
+            val counts = "li:${document.select("li").size} " +
+                "article:${document.select("article").size} " +
+                "img:${document.select("img").size} " +
+                "/dizi/:${document.select("a[href*=/dizi/]").size} " +
+                "/film/:${document.select("a[href*=/film/]").size}"
 
-            return newHomePageResponse(request.name, listOf(debugItem), hasNext = false)
+            val containers = document.select("article, section, main, ul")
+                .take(6)
+                .joinToString(" ; ") { it.tagName() + "." + it.className().take(25) }
+
+            val bodyStart = document.body().text().take(120)
+
+            val debugItems = listOf(
+                debugTitle,
+                "URL: ${request.data.take(70)}",
+                counts,
+                "Kapsayıcılar: $containers",
+                "Metin: $bodyStart"
+            ).map { newMovieSearchResponse(it, request.data, TvType.Movie) }
+
+            return newHomePageResponse(request.name, debugItems, hasNext = false)
         }
 
         return newHomePageResponse(request.name, home, hasNext = false)
