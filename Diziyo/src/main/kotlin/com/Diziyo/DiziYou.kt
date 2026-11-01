@@ -281,7 +281,8 @@ class DiziYou : MainAPI() {
 
         var foundStream = false
 
-        fun sendStream(label: String, streamUrl: String) {
+        // newExtractorLink suspend olduğu için bu fonksiyon da suspend olmalı.
+        suspend fun sendStream(label: String, streamUrl: String) {
             callback.invoke(
                 newExtractorLink(
                     source = name,
