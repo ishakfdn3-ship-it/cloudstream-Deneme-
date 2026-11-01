@@ -164,22 +164,23 @@
         "name": "FilmMakinesi"
     },
     {
-        "iconUrl": "https://www.google.com/s2/favicons?domain=www.filmmodu17.com&sz=%size%",
-        "fileHash": "sha256-3d3f12e5ad894b34bc2c361c865adc9b850601c7b99f7cbf32564a9d94bc1cea",
+        "iconUrl": "https://filmmodu.cc/favicon-32x32.png",
+        "fileHash": "sha256-939fafcaa40f12f85c1e137a32fcbd2454d60ea20b0fcb91f07699e77640c9c3",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/ishakfdn3-ship-it/cloudstream-Deneme-",
-        "fileSize": 16844,
-        "status": 1,
+        "fileSize": 29553,
+        "status": 3,
         "language": "tr",
         "authors": [
-            "keyiflerolsun"
+            "Filmmodu"
         ],
         "tvTypes": [
-            "Movie"
+            "Movie",
+            "TvSeries"
         ],
-        "version": 8,
+        "version": 1,
         "internalName": "FilmModu",
-        "description": "Film modun geldiyse y\u00fcksek kalitede en yeni filmleri izle, 1080p izleyebilece\u011finiz reklamsiz film sitesi.",
+        "description": "Filmmodu film ve dizi sa\u011flay\u0131c\u0131s\u0131",
         "url": "https://raw.githubusercontent.com/ishakfdn3-ship-it/cloudstream-Deneme-/builds/FilmModu.cs3",
         "name": "FilmModu"
     },
