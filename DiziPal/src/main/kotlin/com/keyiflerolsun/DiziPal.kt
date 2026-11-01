@@ -1,17 +1,21 @@
-
- // ! Bu araç @keyiflerolsun tarafından | @KekikAkademi için yazılmıştır.
+// ! Bu araç @keyiflerolsun tarafından | @KekikAkademi için yazılmıştır.
 
 package com.keyiflerolsun
 
 import android.util.Log
-import org.jsoup.nodes.Element
-import com.lagradost.cloudstream3.*
-import com.lagradost.cloudstream3.utils.*
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
+import com.lagradost.cloudstream3.*
+import com.lagradost.cloudstream3.network.CloudflareKiller
+import com.lagradost.cloudstream3.utils.*
+import okhttp3.Interceptor
+import okhttp3.Response
+import org.jsoup.Jsoup
+import org.jsoup.nodes.Element
 
 class DiziPal : MainAPI() {
-    override var mainUrl = "https://dizipal1592.com"
+    // ! Site adresi sık değişiyor. Çalışan güncel adresi buraya yaz.
+    override var mainUrl = "https://dizipal1591.com"
     override var name = "DiziPal"
     override val hasMainPage = true
     override var lang = "tr"
@@ -19,6 +23,37 @@ class DiziPal : MainAPI() {
     override val supportedTypes = setOf(TvType.TvSeries, TvType.Movie)
 
     override var sequentialMainPage = true
+
+    // Cloudflare "Just a moment" sayfasını otomatik aşmak için
+    private val cloudflareKiller by lazy { CloudflareKiller() }
+    private val interceptor by lazy { CloudflareInterceptor(cloudflareKiller) }
+
+    class CloudflareInterceptor(private val cloudflareKiller: CloudflareKiller) : Interceptor {
+        override fun intercept(chain: Interceptor.Chain): Response {
+            val request = chain.request()
+            val response = chain.proceed(request)
+            val body = response.peekBody(1024 * 1024).string()
+            val doc = Jsoup.parse(body)
+
+            if (response.code == 403 || response.code == 503 ||
+                doc.title().contains("Just a moment", true) ||
+                body.contains("cf-browser-verification") ||
+                body.contains("challenge-platform")
+            ) {
+                response.close()
+                return cloudflareKiller.intercept(chain)
+            }
+
+            return response
+        }
+    }
+
+    private val browserHeaders = mapOf(
+        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+        "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language" to "tr-TR,tr;q=0.9,en;q=0.8"
+    )
 
     override val mainPage = mainPageOf(
         "$mainUrl/diziler/son-bolumler" to "Son Bölümler",
@@ -47,12 +82,38 @@ class DiziPal : MainAPI() {
         page: Int,
         request: MainPageRequest
     ): HomePageResponse {
-        val document = app.get(request.data).document
+        val response = app.get(
+            request.data,
+            headers = browserHeaders,
+            referer = "$mainUrl/",
+            interceptor = interceptor
+        )
+        val document = response.document
+
+        Log.d("DZP", "mainPage ${request.name} » HTTP ${response.code} | url=${response.url}")
 
         val home = if (request.data.contains("/diziler/son-bolumler")) {
             document.select("div.episode-item").mapNotNull { it.sonBolumler() }
         } else {
-            document.select("article.type2 ul li").mapNotNull { it.diziler() }
+            var items = document.select("article.type2 ul li").mapNotNull { it.diziler() }
+
+            // Yedek seçiciler: site HTML'i değişmişse boş kalmasın
+            if (items.isEmpty()) {
+                items = document.select("div.items li, ul.items li, div.list li, article li")
+                    .mapNotNull { it.diziler() }
+            }
+            if (items.isEmpty()) {
+                items = document.select("a[href*=/dizi/], a[href*=/film/]")
+                    .mapNotNull { it.parent()?.diziler() ?: it.diziler() }
+                    .distinctBy { it.url }
+            }
+            items
+        }
+
+        Log.d("DZP", "mainPage ${request.name} » ${home.size} içerik")
+
+        if (home.isEmpty()) {
+            Log.d("DZP", "HTML başı » ${document.html().take(1500)}")
         }
 
         return newHomePageResponse(request.name, home, hasNext = false)
@@ -64,7 +125,7 @@ class DiziPal : MainAPI() {
             ?.replace(". Sezon ", "x")?.replace(". Bölüm", "") ?: return null
         val title = "$name $episode"
         val href = fixUrlNull(selectFirst("a")?.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(selectFirst("img")?.attr("src"))
+        val posterUrl = imgUrl()
 
         return newTvSeriesSearchResponse(
             title,
@@ -76,13 +137,31 @@ class DiziPal : MainAPI() {
     }
 
     private fun Element.diziler(): SearchResponse? {
-        val title = selectFirst("span.title")?.text() ?: return null
+        val title = selectFirst("span.title")?.text()
+            ?: selectFirst("h2, h3, h4, h5")?.text()
+            ?: selectFirst("img")?.attr("alt")
+            ?: selectFirst("a")?.attr("title")
+            ?: return null
         val href = fixUrlNull(selectFirst("a")?.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(selectFirst("img")?.attr("src"))
+        val posterUrl = imgUrl()
 
-        return newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
-            this.posterUrl = posterUrl
+        return if (href.contains("/film/")) {
+            newMovieSearchResponse(title.trim(), href, TvType.Movie) {
+                this.posterUrl = posterUrl
+            }
+        } else {
+            newTvSeriesSearchResponse(title.trim(), href, TvType.TvSeries) {
+                this.posterUrl = posterUrl
+            }
         }
+    }
+
+    // Lazy-load görselleri için data-src / data-lazy-src desteği
+    private fun Element.imgUrl(): String? {
+        val img = selectFirst("img") ?: return null
+        val src = img.attr("data-src").ifBlank { img.attr("data-lazy-src") }
+            .ifBlank { img.attr("src") }
+        return fixUrlNull(src)
     }
 
     private fun SearchItem.toPostSearchResult(): SearchResponse {
@@ -106,10 +185,12 @@ class DiziPal : MainAPI() {
             "$mainUrl/api/search-autocomplete",
             headers = mapOf(
                 "Accept" to "application/json, text/javascript, */*; q=0.01",
-                "X-Requested-With" to "XMLHttpRequest"
+                "X-Requested-With" to "XMLHttpRequest",
+                "User-Agent" to browserHeaders.getValue("User-Agent")
             ),
             referer = "$mainUrl/",
-            data = mapOf("query" to query)
+            data = mapOf("query" to query),
+            interceptor = interceptor
         )
 
         val searchItemsMap =
@@ -121,7 +202,13 @@ class DiziPal : MainAPI() {
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun load(url: String): LoadResponse? {
-        val document = app.get(url).document
+        val document = app.get(
+            url,
+            headers = browserHeaders,
+            referer = "$mainUrl/",
+            interceptor = interceptor
+        ).document
+
         val poster = fixUrlNull(document.selectFirst("[property='og:image']")?.attr("content"))
         val year = document.selectXpath("//div[text()='Yapım Yılı']//following-sibling::div")
             .text().trim().toIntOrNull()
@@ -181,7 +268,13 @@ class DiziPal : MainAPI() {
     ): Boolean {
         Log.d("DZP", "data » $data")
 
-        val document = app.get(data).document
+        val document = app.get(
+            data,
+            headers = browserHeaders,
+            referer = "$mainUrl/",
+            interceptor = interceptor
+        ).document
+
         val iframe = document.selectFirst(".series-player-container iframe")?.attr("src")
             ?: document.selectFirst("div#vast_new iframe")?.attr("src")
             ?: return false
