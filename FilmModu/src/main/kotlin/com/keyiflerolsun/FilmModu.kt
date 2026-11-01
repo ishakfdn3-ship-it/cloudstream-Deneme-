@@ -2,7 +2,7 @@ package com.filmmodu
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
-import kotlinx.coroutines.CancellationException
+import java.util.concurrent.CancellationException
 import org.json.JSONArray
 import org.json.JSONObject
 import org.jsoup.Jsoup
@@ -598,7 +598,7 @@ class Filmmodu : MainAPI() {
         }
     }
 
-    private fun emitDirectVideo(
+    private suspend fun emitDirectVideo(
         url: String,
         referer: String,
         sourceName: String,
