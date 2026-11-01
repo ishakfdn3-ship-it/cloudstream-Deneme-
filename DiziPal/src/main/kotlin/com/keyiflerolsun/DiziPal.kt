@@ -114,6 +114,13 @@ class DiziPal : MainAPI() {
 
         if (home.isEmpty()) {
             Log.d("DZP", "HTML başı » ${document.html().take(1500)}")
+
+            // Teşhis satırı: loga bakmadan ekranda sebebi göster
+            val debugTitle = "⚠ HTTP ${response.code} | ${document.title().take(40)} | " +
+                "${document.html().length} bayt | ${response.url.take(50)}"
+            val debugItem = newMovieSearchResponse(debugTitle, request.data, TvType.Movie)
+
+            return newHomePageResponse(request.name, listOf(debugItem), hasNext = false)
         }
 
         return newHomePageResponse(request.name, home, hasNext = false)
