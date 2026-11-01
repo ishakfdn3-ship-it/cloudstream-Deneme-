@@ -124,26 +124,6 @@
         "name": "DiziPal"
     },
     {
-        "iconUrl": "https://www.google.com/s2/favicons?domain=www.diziyou.co&sz=%size%",
-        "fileHash": "sha256-66b82303a46ae265dced1c74b6e9ccfde8c050154aafa83560c1e92838f18731",
-        "apiVersion": 1,
-        "repositoryUrl": "https://github.com/ishakfdn3-ship-it/cloudstream-Deneme-",
-        "fileSize": 15374,
-        "status": 1,
-        "language": "tr",
-        "authors": [
-            "keyiflerolsun"
-        ],
-        "tvTypes": [
-            "TvSeries"
-        ],
-        "version": 7,
-        "internalName": "DiziYou",
-        "description": "Diziyou en kaliteli T\u00fcrk\u00e7e dublaj ve altyaz\u0131l\u0131 yabanc\u0131 dizi izleme sitesidir. G\u00fcncel ve efsanevi dizileri 1080p Full HD kalitede izlemek i\u00e7in hemen t\u0131kla!",
-        "url": "https://raw.githubusercontent.com/ishakfdn3-ship-it/cloudstream-Deneme-/builds/DiziYou.cs3",
-        "name": "DiziYou"
-    },
-    {
         "iconUrl": "https://www.google.com/s2/favicons?domain=filmmakinesi.film&sz=%size%",
         "fileHash": "sha256-e899e267877055258f13bab3f26e8d09521a8836c526a5931a10c611b1dd5dc8",
         "apiVersion": 1,
