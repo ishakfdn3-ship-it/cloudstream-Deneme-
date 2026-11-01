@@ -120,8 +120,24 @@ class HotstreamExtractor : ExtractorApi() {
                 return
             }
 
-            // Test isteği kaldırıldı: tek kullanımlık bağlantı
-            // ikinci kez istenirse sunucu 404 dönebilir.
+            // Embed sayfasının oturum çerezlerini oynatıcı isteğine ekle.
+            val cookieHeader = response.cookies.entries
+                .joinToString("; ") { "${it.key}=${it.value}" }
+
+            val playerHeaders = mutableMapOf(
+                "User-Agent" to chromeUserAgent,
+                "Origin" to mainUrl
+            )
+
+            if (cookieHeader.isNotBlank()) {
+                playerHeaders["Cookie"] = cookieHeader
+            }
+
+            Log.d(
+                "UFILM",
+                "Çerez sayısı: ${response.cookies.size}"
+            )
+
             callback(
                 newExtractorLink(
                     source = name,
@@ -131,9 +147,7 @@ class HotstreamExtractor : ExtractorApi() {
                 ) {
                     this.referer = url
                     this.quality = Qualities.Unknown.value
-                    this.headers = mapOf(
-                        "User-Agent" to chromeUserAgent
-                    )
+                    this.headers = playerHeaders
                 }
             )
 
