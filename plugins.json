@@ -124,6 +124,25 @@
         "name": "DiziPal"
     },
     {
+        "fileHash": "sha256-10ebed3c77f1c4adc5a2226708ab4893f7090c17bc566c068ffb449474d1d8dc",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/ishakfdn3-ship-it/cloudstream-Deneme-",
+        "fileSize": 16320,
+        "status": 3,
+        "language": "tr",
+        "authors": [
+            "\u0130shak"
+        ],
+        "tvTypes": [
+            "TvSeries"
+        ],
+        "version": 1,
+        "internalName": "Diziyo",
+        "description": "DiziYou dizi sa\u011flay\u0131c\u0131s\u0131",
+        "url": "https://raw.githubusercontent.com/ishakfdn3-ship-it/cloudstream-Deneme-/builds/Diziyo.cs3",
+        "name": "Diziyo"
+    },
+    {
         "iconUrl": "https://www.google.com/s2/favicons?domain=filmmakinesi.film&sz=%size%",
         "fileHash": "sha256-e899e267877055258f13bab3f26e8d09521a8836c526a5931a10c611b1dd5dc8",
         "apiVersion": 1,
