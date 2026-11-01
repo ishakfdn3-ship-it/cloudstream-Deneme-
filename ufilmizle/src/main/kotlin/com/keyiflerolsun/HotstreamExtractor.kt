@@ -50,8 +50,6 @@ class HotstreamExtractor : ExtractorApi() {
 
             val html = response.text
 
-            // Beklenen biçim:
-            // bePlayer('hash', '{"ct":"...","iv":"...","s":"..."}')
             val playerCall = Regex(
                 """bePlayer\s*\(\s*('(?:\\.|[^'\\])*')\s*,\s*('(?:\\.|[^'\\])*')""",
                 RegexOption.DOT_MATCHES_ALL
@@ -122,41 +120,8 @@ class HotstreamExtractor : ExtractorApi() {
                 return
             }
 
-            // Teşhis: oynatma listesi ağ istemcisiyle açılıyor mu?
-            try {
-                val test = app.get(
-                    videoUrl,
-                    referer = url,
-                    headers = mapOf(
-                        "User-Agent" to chromeUserAgent
-                    )
-                )
-
-                Log.d(
-                    "UFILM",
-                    "Oynatma listesi HTTP: ${test.code}"
-                )
-
-                val isHls = test.text
-                    .trimStart {
-                        it.isWhitespace() || it.code == 65279
-                    }
-                    .startsWith("#EXTM3U")
-
-                Log.d(
-                    "UFILM",
-                    "Oynatma listesi HLS mi: $isHls"
-                )
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.e(
-                    "UFILM",
-                    "Oynatma listesi test isteği başarısız: " +
-                        e.javaClass.simpleName
-                )
-            }
-
+            // Test isteği kaldırıldı: tek kullanımlık bağlantı
+            // ikinci kez istenirse sunucu 404 dönebilir.
             callback(
                 newExtractorLink(
                     source = name,
