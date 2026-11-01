@@ -36,9 +36,19 @@ class HotstreamExtractor : ExtractorApi() {
         callback: (ExtractorLink) -> Unit
     ) {
         try {
+            // Embed sayfasının gerçek origin'i (mainUrl yerine url'den türetilir)
+            val embedUri = URI(url)
+            val origin = "${embedUri.scheme}://${embedUri.host}"
+
+            // Embed sayfasını da oynatıcıyla aynı User-Agent ile aç;
+            // token/çerez UA'ya bağlıysa uyuşmazlık 403 verir.
             val response = app.get(
                 url,
-                referer = referer ?: "https://ufilmizle.com/"
+                referer = referer ?: "https://ufilmizle.com/",
+                headers = mapOf(
+                    "User-Agent" to chromeUserAgent,
+                    "Accept" to "text/html,application/xhtml+xml,*/*;q=0.8"
+                )
             )
 
             Log.d("UFILM", "Hotstream embed HTTP: ${response.code}")
@@ -106,14 +116,19 @@ class HotstreamExtractor : ExtractorApi() {
             val rawVideo = settings
                 .optString("video_location")
                 .trim()
+                // JSON'dan kalan kaçışlı eğik çizgileri temizle
+                .replace("\\/", "/")
 
             if (rawVideo.isBlank()) {
                 Log.e("UFILM", "video_location alanı boş")
                 return
             }
 
-            val videoUrl = URI(url).resolve(rawVideo).toString()
+            val videoUrl = embedUri.resolve(rawVideo).toString()
             val scheme = URI(videoUrl).scheme?.lowercase()
+
+            Log.d("UFILM", "rawVideo: $rawVideo")
+            Log.d("UFILM", "videoUrl: $videoUrl")
 
             if (scheme != "http" && scheme != "https") {
                 Log.e("UFILM", "Desteklenmeyen video adresi")
@@ -126,17 +141,38 @@ class HotstreamExtractor : ExtractorApi() {
 
             val playerHeaders = mutableMapOf(
                 "User-Agent" to chromeUserAgent,
-                "Origin" to mainUrl
+                "Origin" to origin,
+                "Referer" to "$origin/",
+                "Accept" to "*/*"
             )
 
             if (cookieHeader.isNotBlank()) {
                 playerHeaders["Cookie"] = cookieHeader
             }
 
-            Log.d(
-                "UFILM",
-                "Çerez sayısı: ${response.cookies.size}"
-            )
+            Log.d("UFILM", "Çerez sayısı: ${response.cookies.size}")
+
+            // Teşhis: aynı başlıklarla m3u8'e istek at (başarısız olursa akışı bozma).
+            try {
+                val test = app.get(videoUrl, headers = playerHeaders)
+                Log.d("UFILM", "m3u8 test HTTP: ${test.code} -> $videoUrl")
+
+                // Başlıklar kabul edilmediyse Referer'ı tam embed URL'si ile dene.
+                if (test.code == 403) {
+                    val altHeaders = playerHeaders.toMutableMap()
+                    altHeaders["Referer"] = url
+                    val alt = app.get(videoUrl, headers = altHeaders)
+                    Log.d("UFILM", "m3u8 test (Referer=embed url) HTTP: ${alt.code}")
+
+                    if (alt.code in 200..299) {
+                        playerHeaders["Referer"] = url
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("UFILM", "m3u8 test isteği başarısız", e)
+            }
 
             callback(
                 newExtractorLink(
@@ -145,7 +181,7 @@ class HotstreamExtractor : ExtractorApi() {
                     url = videoUrl,
                     type = ExtractorLinkType.M3U8
                 ) {
-                    this.referer = url
+                    this.referer = playerHeaders["Referer"] ?: "$origin/"
                     this.quality = Qualities.Unknown.value
                     this.headers = playerHeaders
                 }
