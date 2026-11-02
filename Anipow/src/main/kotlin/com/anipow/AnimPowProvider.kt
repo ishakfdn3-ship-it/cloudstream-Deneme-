@@ -1,4 +1,4 @@
-package com.animpow
+package com.anipow
 
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.LoadResponse
@@ -8,10 +8,13 @@ import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.app
+import com.lagradost.cloudstream3.fixUrl
+import com.lagradost.cloudstream3.fixUrlNull
 import com.lagradost.cloudstream3.mainPageOf
+import com.lagradost.cloudstream3.newAnimeSearchResponse
 import com.lagradost.cloudstream3.newHomePageResponse
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import kotlinx.coroutines.CancellationException
+import java.util.concurrent.CancellationException
 
 class AnimPowProvider : MainAPI() {
 
@@ -34,10 +37,9 @@ class AnimPowProvider : MainAPI() {
     )
 
     /*
-     * ⚠️ Katalog kartları tarayıcıda görüldü.
-     * CloudStream'in aldığı ham HTML'de aynı kartların bulunup
-     * bulunmadığı doğrulanmadı. Site kartları JavaScript ile
-     * oluşturuyorsa sonuç boş gelebilir.
+     * ⚠️ Kartlar tarayıcı DOM'unda görüldü.
+     * CloudStream'in aldığı ham HTML'de de bulunup bulunmadıkları
+     * henüz doğrulanmadı.
      */
     private suspend fun catalog(): List<SearchResponse> {
         val document = try {
@@ -67,7 +69,6 @@ class AnimPowProvider : MainAPI() {
 
                 val url = fixUrl(rawHref)
 
-                // Yalnızca AnimPow ayrıntı bağlantılarını kabul et.
                 if (!url.startsWith("$mainUrl/anime/")) {
                     return@mapNotNull null
                 }
@@ -86,8 +87,8 @@ class AnimPowProvider : MainAPI() {
     }
 
     /*
-     * ⚠️ Sayfalama doğrulanmadı.
-     * Bu nedenle yalnızca ilk katalog sayfası denenir.
+     * ⚠️ Katalog sayfalaması doğrulanmadı.
+     * Yalnızca ilk sayfa denenir.
      */
     override suspend fun getMainPage(
         page: Int,
@@ -107,9 +108,8 @@ class AnimPowProvider : MainAPI() {
     }
 
     /*
-     * ⚠️ Bu, sitenin gerçek arama endpoint'i değildir.
+     * ⚠️ Bu gerçek site araması değil.
      * Alınabilen katalog kartlarını başlığa göre filtreler.
-     * Bu nedenle eksik sonuç verebilir.
      */
     override suspend fun search(query: String): List<SearchResponse> {
         val term = query.trim()
@@ -124,16 +124,15 @@ class AnimPowProvider : MainAPI() {
     }
 
     /*
-     * ⚠️ Film/dizi detayları ve bölüm listesi doğrulanmadı.
-     * Şu anda detay ekranı açılmaz.
+     * ⚠️ Detay ve bölüm listesi henüz desteklenmiyor.
      */
     override suspend fun load(url: String): LoadResponse? {
         return null
     }
 
     /*
-     * ⚠️ Video adresinin nasıl üretildiği ve gerekli başlıklar
-     * doğrulanmadı. Şu anda video bağlantısı döndürülmez.
+     * ⚠️ Video kaynak zinciri henüz doğrulanmadı.
+     * Bu sürüm video oynatmaz.
      */
     override suspend fun loadLinks(
         data: String,
