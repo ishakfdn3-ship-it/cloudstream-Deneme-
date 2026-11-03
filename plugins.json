@@ -22,6 +22,26 @@
         "name": "AnimeciX"
     },
     {
+        "fileHash": "sha256-d4070a543d7f6981d7009f2defc9332fb64ec0bbca5803583e4ace7cba160874",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/ishakfdn3-ship-it/cloudstream-Deneme-",
+        "fileSize": 20150,
+        "status": 3,
+        "language": "tr",
+        "authors": [
+            "\u0130shak"
+        ],
+        "tvTypes": [
+            "Movie",
+            "TvSeries"
+        ],
+        "version": 1,
+        "internalName": "DiziBoxIzle",
+        "description": "DiziBoxIzle katalog ve player denemesi",
+        "url": "https://raw.githubusercontent.com/ishakfdn3-ship-it/cloudstream-Deneme-/builds/DiziBoxIzle.cs3",
+        "name": "DiziBoxIzle"
+    },
+    {
         "iconUrl": "https://www.google.com/s2/favicons?domain=https://dizikorea.vip&sz=%size%",
         "fileHash": "sha256-dede646845867f72a8d236ea2fa9b89c71ec269efdd2d417fddade5042815999",
         "apiVersion": 1,
