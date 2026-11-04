@@ -164,15 +164,15 @@
         "name": "FilmMakinesi"
     },
     {
-        "iconUrl": "https://filmmodu.cc/favicon-32x32.png",
-        "fileHash": "sha256-939fafcaa40f12f85c1e137a32fcbd2454d60ea20b0fcb91f07699e77640c9c3",
+        "iconUrl": "https://filmmodu.cc/favicon.ico",
+        "fileHash": "sha256-b9fb564e02cd930c5deddbe995b66716ea4f8e517ebf92f5b79ea458575192f9",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/ishakfdn3-ship-it/cloudstream-Deneme-",
-        "fileSize": 29553,
-        "status": 3,
+        "fileSize": 12592,
+        "status": 1,
         "language": "tr",
         "authors": [
-            "Filmmodu"
+            "ishak"
         ],
         "tvTypes": [
             "Movie",
@@ -180,7 +180,7 @@
         ],
         "version": 1,
         "internalName": "FilmModu",
-        "description": "Filmmodu film ve dizi sa\u011flay\u0131c\u0131s\u0131",
+        "description": "Filmmodu.cc film ve dizi izleme",
         "url": "https://raw.githubusercontent.com/ishakfdn3-ship-it/cloudstream-Deneme-/builds/FilmModu.cs3",
         "name": "FilmModu"
     },
