@@ -1,4 +1,4 @@
-package com.example.filmmodu
+package com.keyiflerolsun
 
 import android.util.Base64
 import com.lagradost.cloudstream3.*
@@ -7,7 +7,7 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
-import kotlinx.coroutines.CancellationException
+import java.util.concurrent.CancellationException
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
