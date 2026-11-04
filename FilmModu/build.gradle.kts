@@ -1,11 +1,12 @@
 version = 1
 
 cloudstream {
-    description = "Filmmodu film ve dizi sağlayıcısı"
-    authors = listOf("İshak")
     language = "tr"
-    status = 3
+    description = "Filmmodu.cc film ve dizi izleme"
+    authors = listOf("ishak")
+    status = 1
     tvTypes = listOf("Movie", "TvSeries")
+    iconUrl = "https://filmmodu.cc/favicon.ico"
 }
 
 dependencies {
