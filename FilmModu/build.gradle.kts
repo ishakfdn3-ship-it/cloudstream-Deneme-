@@ -2,9 +2,12 @@ version = 1
 
 cloudstream {
     description = "Filmmodu film ve dizi sağlayıcısı"
-    authors = listOf("Filmmodu")
+    authors = listOf("İshak")
+    language = "tr"
     status = 3
     tvTypes = listOf("Movie", "TvSeries")
-    language = "tr"
-    iconUrl = "https://filmmodu.cc/favicon-32x32.png"
+}
+
+dependencies {
+    compileOnly("org.jspecify:jspecify:1.0.0")
 }
