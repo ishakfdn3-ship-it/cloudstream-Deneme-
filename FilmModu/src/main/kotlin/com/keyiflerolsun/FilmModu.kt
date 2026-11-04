@@ -10,11 +10,12 @@ import com.lagradost.cloudstream3.utils.newExtractorLink
 import kotlinx.coroutines.CancellationException
 import org.json.JSONArray
 import org.json.JSONObject
+import org.json.JSONTokener
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.io.ByteArrayOutputStream
-import java.net.URI
+import java.net.URL
 import java.net.URLEncoder
 import java.security.MessageDigest
 import javax.crypto.Cipher
@@ -33,7 +34,16 @@ class FilmModu : MainAPI() {
         TvType.TvSeries
     )
 
+    /**
+     * Canlı sitede doğrulananlar: korku, dram, populer-filmler,
+     * en-cok-izlenen-filmler, yerli-film-izle.
+     * Diğerleri aynı adlandırma düzenini izliyor ama ayrıca
+     * doğrulanamadı; bir kategori boş dönerse yalnızca o satır boş kalır.
+     */
     override val mainPage = mainPageOf(
+        "$mainUrl/populer-filmler" to "Popüler Filmler",
+        "$mainUrl/en-cok-izlenen-filmler" to "En Çok İzlenenler",
+        "$mainUrl/filmizle/yerli-film-izle" to "Yerli Filmler",
         "$mainUrl/filmizle/aksiyon-filmleri-izle" to "Aksiyon",
         "$mainUrl/filmizle/komedi-filmleri-hd-izle" to "Komedi",
         "$mainUrl/filmizle/korku-filmleri-izle" to "Korku",
@@ -44,14 +54,24 @@ class FilmModu : MainAPI() {
             "Türkçe Dublaj",
         "$mainUrl/filmizle/turkce-altyazili-filmler-hd-izle" to
             "Türkçe Altyazılı",
-        "$mainUrl/populer-filmler" to "Popüler Filmler",
         "$mainUrl/trend-filmler" to "Trend Filmler",
         "$mainUrl/yabanci-dizi-izle" to "Diziler"
     )
 
+    // Yalnızca tek parçalı detay adreslerini kabul eder:
+    // /film/slug/ veya /dizi/slug/ (sezon/bölüm adresleri hariç).
+    private val detailRegex =
+        Regex("""^https?://[^/]+/(?:film|dizi)/[^/?#]+/?$""")
+
+    private val yearRegex =
+        Regex("""(?<!\d)(?:19|20)\d{2}(?!\d)""")
+
+    private val scoreRegex =
+        Regex("""(?<![\d.,])\d{1,2}[.,]\d(?!\d)""")
+
     /**
-     * Sayfa parametresi tahmindir. Sitenin mevcut sayfalaması
-     * doğrulanmadan üretim sürümü olarak kabul edilmemelidir.
+     * Sayfalama yol tabanlıdır (doğrulandı):
+     * /filmizle/korku-filmleri-izle  ->  /filmizle/korku-filmleri-izle/2
      */
     override suspend fun getMainPage(
         page: Int,
@@ -60,75 +80,96 @@ class FilmModu : MainAPI() {
         val pageUrl = if (page <= 1) {
             request.data
         } else {
-            val separator = if (request.data.contains("?")) "&" else "?"
-            "${request.data}${separator}page=$page"
+            "${request.data.trimEnd('/')}/$page"
         }
 
-        val document = app.get(pageUrl).document
+        val document = app.get(pageUrl, referer = "$mainUrl/").document
         val results = parseCards(document)
 
-        val hasNext = document.selectFirst(
-            "a[rel=next], .pagination a[rel=next]"
-        ) != null
+        val nextPath = "/${page + 1}"
+        val hasNextLink = document.select("a[href]").any { link ->
+            link.attr("href").trimEnd('/').endsWith(nextPath) ||
+                link.text().trim().equals("İleri", ignoreCase = true)
+        }
 
         return newHomePageResponse(
             request.name,
             results,
-            hasNext = hasNext
+            hasNext = results.isNotEmpty() && hasNextLink
         )
     }
 
     private fun parseCards(document: Document): List<SearchResponse> {
-        val movieCards = document.select("article.movie_box a.image")
+        val movieCards = document.select(
+            "article.movie_box a.image, article.movie_box > a[href]"
+        )
 
-        val seriesCards = document.select(
-            "main a[href*='/dizi/']"
-        ).filter { element ->
-            val href = element.attr("href")
-            !href.contains("/sezon-") &&
-                !href.contains("/bolum-")
+        val seriesCards = document.select("main a[href*='/dizi/']")
+
+        var cards: List<Element> = movieCards + seriesCards
+
+        // Bilinen kart yapısı bulunamazsa tüm detay bağlantılarını dene.
+        if (cards.none { detailRegex.matches(it.attr("abs:href")) }) {
+            cards = document.select("a[href*='/film/'], a[href*='/dizi/']")
         }
 
-        return (movieCards + seriesCards)
+        return cards
             .mapNotNull { card -> card.toSearchItem() }
             .distinctBy { it.url }
     }
 
     private fun Element.toSearchItem(): SearchResponse? {
-        val href = attr("abs:href")
-            .ifBlank { resolve(mainUrl, attr("href")) }
-            ?: return null
+        val rawHref = attr("abs:href").ifBlank { attr("href") }
+        val href = resolve(mainUrl, rawHref) ?: return null
+        if (!detailRegex.matches(href)) return null
 
-        val title = selectFirst("h2, h3, .title, strong")
-            ?.text()
-            ?.trim()
-            ?.takeIf { it.isNotEmpty() }
-            ?: attr("title")
-                .removeSuffix(" izle")
-                .trim()
-                .takeIf { it.isNotEmpty() }
-            ?: return null
-
-        val image = selectFirst("img")
-        val poster = image?.let {
-            val raw = it.attr("data-src")
-                .ifBlank { it.attr("src") }
-
-            if (raw.startsWith("data:")) {
-                null
-            } else {
-                resolve(href, raw)
-            }
+        // Bağlantı kartın tamamını sarıyorsa kendisi, yalnızca görsel
+        // içeriyorsa çevreleyen article/üst öğe kart sayılır.
+        val card = if (text().length > 12) {
+            this
+        } else {
+            parents().firstOrNull { it.tagName() == "article" }
+                ?: parent()
+                ?: this
         }
 
-        val year = selectFirst(".year")
+        val title = cleanTitle(attr("title"))
+            .takeIf { it.isNotEmpty() }
+            ?: card.selectFirst("h2, h3, .title, strong")
+                ?.text()
+                ?.let { cleanTitle(it) }
+                ?.takeIf { it.isNotEmpty() }
+            ?: card.selectFirst("img[alt]")
+                ?.attr("alt")
+                ?.let { cleanTitle(it) }
+                ?.takeIf { it.isNotEmpty() }
+            ?: return null
+
+        val image = card.selectFirst("img") ?: selectFirst("img")
+        val posterRaw = image?.let { img ->
+            listOf("data-src", "data-lazy-src", "data-original", "src")
+                .map { key -> img.attr(key) }
+                .firstOrNull { value ->
+                    value.isNotBlank() && !value.startsWith("data:")
+                }
+        }
+        val poster = posterRaw?.let { resolve(href, it) }
+
+        val cardText = card.text()
+
+        val year = card.selectFirst(".year")
             ?.text()
             ?.trim()
             ?.toIntOrNull()
+            ?: yearRegex.findAll(cardText).lastOrNull()
+                ?.value
+                ?.toIntOrNull()
 
-        val scoreText = selectFirst(".imdb")
-            ?.text()
-            ?.trim()
+        val scoreSource = card.selectFirst(".imdb")?.text() ?: cardText
+        val scoreText = scoreRegex.find(scoreSource)
+            ?.value
+            ?.replace(',', '.')
+            ?.takeIf { (it.toDoubleOrNull() ?: -1.0) in 0.0..10.0 }
 
         return if (href.contains("/dizi/")) {
             newTvSeriesSearchResponse(
@@ -154,36 +195,49 @@ class FilmModu : MainAPI() {
     }
 
     /**
-     * /arama/oneri adresi sayfada görüldü.
-     * q parametresi arama alanının isminden çıkarılmış bir tahmindir.
-     * Yanıt JSON veya HTML ise ikisini de okumayı dener.
+     * Arama adresi /arama/oneri sayfada görüldü, ancak q parametresi ve
+     * yanıt biçimi (HTML veya JSON) doğrulanamadı. Bu yüzden birkaç
+     * adayı sırayla dener ve ilk sonuç veren yanıtı kullanır.
      */
     override suspend fun search(query: String): List<SearchResponse> {
         val encoded = URLEncoder.encode(query, "UTF-8")
-        val response = app.get(
+        val endpoints = listOf(
             "$mainUrl/arama/oneri?q=$encoded",
-            referer = "$mainUrl/"
+            "$mainUrl/arama?q=$encoded"
         )
 
-        val body = response.text
+        for (endpoint in endpoints) {
+            val body = try {
+                app.get(
+                    endpoint,
+                    referer = "$mainUrl/",
+                    headers = mapOf("X-Requested-With" to "XMLHttpRequest")
+                ).text
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                continue
+            }
 
-        val htmlResults = parseCards(
-            Jsoup.parse(body, mainUrl)
-        )
+            val results = parseSearchJson(body).ifEmpty {
+                parseCards(Jsoup.parse(body, mainUrl))
+            }
 
-        if (htmlResults.isNotEmpty()) return htmlResults
+            if (results.isNotEmpty()) return results
+        }
 
-        return parseSearchJson(body)
+        return emptyList()
     }
 
     private fun parseSearchJson(body: String): List<SearchResponse> {
-        val root = try {
-            when {
-                body.trimStart().startsWith("[") -> JSONArray(body)
-                body.trimStart().startsWith("{") -> JSONObject(body)
-                else -> return emptyList()
-            }
-        } catch (_: Exception) {
+        val trimmed = body.trimStart()
+        if (!trimmed.startsWith("[") && !trimmed.startsWith("{")) {
+            return emptyList()
+        }
+
+        val root: Any? = try {
+            JSONTokener(trimmed).nextValue()
+        } catch (e: Exception) {
             return emptyList()
         }
 
@@ -212,26 +266,24 @@ class FilmModu : MainAPI() {
         return objects.mapNotNull { item ->
             val title = firstText(
                 item,
-                "title", "name", "baslik", "ad"
-            ) ?: return@mapNotNull null
+                "title", "name", "baslik", "ad", "label"
+            )?.let { cleanTitle(it) }
+                ?.takeIf { it.isNotEmpty() }
+                ?: return@mapNotNull null
 
             val rawUrl = firstText(
                 item,
-                "url", "link", "href"
+                "url", "link", "href", "permalink"
             ) ?: return@mapNotNull null
 
             val url = resolve(mainUrl, rawUrl)
                 ?: return@mapNotNull null
 
-            if (!url.contains("/film/") &&
-                !url.contains("/dizi/")
-            ) {
-                return@mapNotNull null
-            }
+            if (!detailRegex.matches(url)) return@mapNotNull null
 
             val poster = firstText(
                 item,
-                "poster", "image", "img"
+                "poster", "image", "img", "cover", "resim"
             )?.let { resolve(mainUrl, it) }
 
             if (url.contains("/dizi/")) {
@@ -255,27 +307,45 @@ class FilmModu : MainAPI() {
     }
 
     override suspend fun load(url: String): LoadResponse? {
-        val document = app.get(url).document
+        val document = app.get(url, referer = "$mainUrl/").document
         val metadata = findStructuredMetadata(document)
 
-        val title = metadata?.optString("name")
-            ?.takeIf { it.isNotBlank() }
-            ?: document.selectFirst("main h1")
-                ?.text()
-                ?.trim()
+        val title = (
+            metadata.str("name")
+                ?: document.selectFirst("main h1, h1")?.text()
+                ?: document.selectFirst("meta[property=og:title]")
+                    ?.attr("content")
+            )
+            ?.let { cleanTitle(it) }
+            ?.takeIf { it.isNotEmpty() }
             ?: return null
 
-        val poster = metadata?.optString("image")
-            ?.takeIf { it.isNotBlank() }
+        val poster = jsonImage(metadata?.opt("image"))
             ?: document.selectFirst("meta[property=og:image]")
                 ?.attr("content")
+                ?.takeIf { it.isNotBlank() }
 
-        val description = metadata?.optString("description")
-            ?.takeIf { it.isNotBlank() }
+        val description = metadata.str("description")
+            ?: document.selectFirst("meta[property=og:description]")
+                ?.attr("content")
+                ?.takeIf { it.isNotBlank() }
+            ?: document.selectFirst("meta[name=description]")
+                ?.attr("content")
+                ?.takeIf { it.isNotBlank() }
 
-        val year = metadata?.optString("dateCreated")
-            ?.take(4)
-            ?.toIntOrNull()
+        val year = listOf("dateCreated", "datePublished", "copyrightYear")
+            .firstNotNullOfOrNull { key ->
+                metadata.str(key)?.take(4)?.toIntOrNull()
+            }
+            ?: Regex("""\((\d{4})\)""")
+                .find(
+                    document.selectFirst("meta[property=og:title]")
+                        ?.attr("content")
+                        ?: document.title()
+                )
+                ?.groupValues
+                ?.get(1)
+                ?.toIntOrNull()
             ?: document.selectFirst("a[href*='/yil/']")
                 ?.text()
                 ?.trim()
@@ -284,30 +354,21 @@ class FilmModu : MainAPI() {
 
         val rating = metadata
             ?.optJSONObject("aggregateRating")
-            ?.optString("ratingValue")
-            ?.takeIf { it.isNotBlank() }
+            .str("ratingValue")
 
         val genres = jsonStrings(metadata?.opt("genre"))
-
-        val actors = metadata
-            ?.optJSONArray("actor")
-            ?.let { array ->
-                (0 until array.length()).mapNotNull { index ->
-                    array.optJSONObject(index)
-                        ?.optString("name")
-                        ?.takeIf { it.isNotBlank() }
-                        ?.let { Actor(it) }
-                }
-            }
-            ?: emptyList()
+        val actors = jsonActors(metadata?.opt("actor"))
 
         if (url.contains("/dizi/")) {
             val episodes = document.select(
-                "section.dz-bolumler a.dz-bolum"
+                "a[href*='/sezon-'][href*='/bolum-']"
             ).mapNotNull { element ->
-                val episodeUrl = element.attr("abs:href")
-                    .takeIf { it.isNotBlank() }
-                    ?: return@mapNotNull null
+                val episodeUrl = resolve(
+                    url,
+                    element.attr("abs:href").ifBlank {
+                        element.attr("href")
+                    }
+                ) ?: return@mapNotNull null
 
                 val match = Regex(
                     """/sezon-(\d+)/bolum-(\d+)"""
@@ -320,14 +381,19 @@ class FilmModu : MainAPI() {
                 val episodeNumber =
                     match.groupValues[2].toIntOrNull()
 
-                newEpisode(episodeUrl) {
-                    name = element.attr("title")
-                        .takeIf { it.isNotBlank() }
+                val episodeName = element.attr("title")
+                    .takeIf { it.isNotBlank() }
+                    ?: element.text().trim().takeIf { it.isNotEmpty() }
 
-                    season = seasonNumber
-                    episode = episodeNumber
+                newEpisode(episodeUrl) {
+                    this.name = episodeName
+                    this.season = seasonNumber
+                    this.episode = episodeNumber
                 }
             }.distinctBy { it.data }
+                .sortedWith(
+                    compareBy<Episode>({ it.season ?: 0 }, { it.episode ?: 0 })
+                )
 
             return newTvSeriesLoadResponse(
                 title,
@@ -360,14 +426,10 @@ class FilmModu : MainAPI() {
     }
 
     /**
-     * En iyi çaba:
-     * 1. Sayfada mevcut iframe varsa CloudStream extractor'a ilet.
-     * 2. iframe HTML'inde açık bir HLS adresi varsa oynatıcıya ilet.
-     * 3. bePlayer("hash", "set", ...) çağrısı düz metin olarak
-     *    bulunursa CryptoJS ayarlarını çözmeyi dene.
-     *
-     * Filmmodu'nun dinamik iframe oluşturma isteği henüz bilinmediği
-     * için bu yöntem tüm içeriklerde çalışmak zorunda değildir.
+     * En iyi çaba (oynatıcı mekanizması canlı siteden doğrulanamadı):
+     * 1. Sayfanın kendisinde bePlayer(...) veya açık .m3u8 varsa kullan.
+     * 2. Sayfadaki iframe'leri CloudStream extractor'larına ilet.
+     * 3. Her iframe'in HTML'inde bePlayer(...) / .m3u8 ara.
      */
     override suspend fun loadLinks(
         data: String,
@@ -383,19 +445,28 @@ class FilmModu : MainAPI() {
         }
 
         try {
-            val page = app.get(data)
+            val page = app.get(data, referer = "$mainUrl/")
             val document = page.document
 
-            val frames = document.select(
-                "#f_player iframe[src], #fm_cerceve iframe[src]"
+            if (emitStream(page.text, data, callback)) {
+                foundLink = true
+            }
+
+            var frames = document.select(
+                "#f_player iframe, #fm_cerceve iframe"
             )
+            if (frames.isEmpty()) {
+                frames = document.select("iframe")
+            }
 
-            for (frame in frames) {
-                val iframeUrl = resolve(
+            val frameUrls = frames.mapNotNull { frame ->
+                resolve(
                     data,
-                    frame.attr("src")
-                ) ?: continue
+                    frame.attr("src").ifBlank { frame.attr("data-src") }
+                )
+            }.distinct()
 
+            for (iframeUrl in frameUrls) {
                 try {
                     loadExtractor(
                         iframeUrl,
@@ -405,209 +476,143 @@ class FilmModu : MainAPI() {
                     )
                 } catch (e: CancellationException) {
                     throw e
-                } catch (_: Exception) {
+                } catch (e: Exception) {
                     // Diğer yöntemleri dene.
                 }
 
                 val iframeHtml = try {
-                    app.get(
-                        iframeUrl,
-                        referer = data
-                    ).text
+                    app.get(iframeUrl, referer = data).text
                 } catch (e: CancellationException) {
                     throw e
-                } catch (_: Exception) {
+                } catch (e: Exception) {
                     continue
                 }
 
-                val config = findPlayerConfig(iframeHtml)
-
-                val hlsUrl = config
-                    ?.optString("video_location")
-                    ?.takeIf { it.isNotBlank() }
-                    ?: findPlainHlsUrl(iframeHtml)
-
-                if (!hlsUrl.isNullOrBlank()) {
-                    val absoluteHls = resolve(iframeUrl, hlsUrl)
-                        ?: continue
-
-                    callback(
-                        newExtractorLink(
-                            source = name,
-                            name = "$name HLS",
-                            url = absoluteHls,
-                            type = ExtractorLinkType.M3U8
-                        ) {
-                            referer = iframeUrl
-                        }
-                    )
-
+                if (emitStream(iframeHtml, iframeUrl, callback)) {
                     foundLink = true
                 }
             }
         } catch (e: CancellationException) {
             throw e
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             return foundLink
         }
 
         return foundLink
     }
 
+    private suspend fun emitStream(
+        html: String,
+        base: String,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+        val config = findPlayerConfig(html)
+
+        val raw = config?.let { findConfigStream(it) }
+            ?: findPlainHlsUrl(html)
+
+        val stream = raw?.let { resolve(base, it) } ?: return false
+
+        val linkType = if (stream.contains(".m3u8", ignoreCase = true)) {
+            ExtractorLinkType.M3U8
+        } else {
+            ExtractorLinkType.VIDEO
+        }
+
+        callback(
+            newExtractorLink(
+                source = name,
+                name = "$name HLS",
+                url = stream,
+                type = linkType
+            ) {
+                referer = base
+            }
+        )
+
+        return true
+    }
+
+    private fun findConfigStream(config: JSONObject): String? {
+        return firstText(
+            config,
+            "video_location", "file", "source", "src"
+        )
+    }
+
     /**
-     * Yalnızca bağımsız bir bePlayer çağrısı düz metinde mevcutsa
-     * ve iki argüman basit JavaScript string'leriyse çalışır.
-     * İsimlendirilmiş değişkenler veya farklı JS kodlamaları için
-     * bu ayrıştırıcı yeterli değildir.
+     * bePlayer("hash", "{\"ct\":...}") çağrısını bulur. Dize değişmezleri
+     * kaçış karakterlerini (\" \' \\) doğru işler; böylece çift tırnaklı
+     * JS dizesinin içindeki JSON tırnakları ayrıştırmayı bozmaz.
+     * Argümanlar değişken ise (değişmez değilse) bulunamaz.
      */
     private fun findPlayerConfig(html: String): JSONObject? {
         val regex = Regex(
-            """(?<!function\s)bePlayer\s*\(\s*(['"])(.*?)\1\s*,\s*(['"])(.*?)\3""",
-            setOf(RegexOption.DOT_MATCHES_ALL)
+            """(?<!function\s)bePlayer\s*\(\s*(['"])((?:\\.|(?!\1)[^\\])*)\1\s*,\s*(['"])((?:\\.|(?!\3)[^\\])*)\3""",
+            RegexOption.DOT_MATCHES_ALL
         )
 
         val match = regex.find(html) ?: return null
-        val hash = match.groupValues[2]
-        val encrypted = match.groupValues[4]
-            .replace("\\\"", "\"")
-            .replace("\\'", "'")
-            .replace("\\\\", "\\")
+        val hash = unescapeJs(match.groupValues[2])
+        val encrypted = unescapeJs(match.groupValues[4])
 
         return try {
             decryptCryptoJs(hash, encrypted)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             null
         }
     }
 
+    private fun unescapeJs(text: String): String {
+        val out = StringBuilder(text.length)
+        var i = 0
+
+        while (i < text.length) {
+            val c = text[i]
+
+            if (c != '\\' || i + 1 >= text.length) {
+                out.append(c)
+                i++
+                continue
+            }
+
+            when (val next = text[i + 1]) {
+                'n' -> { out.append('\n'); i += 2 }
+                'r' -> { out.append('\r'); i += 2 }
+                't' -> { out.append('\t'); i += 2 }
+                'b' -> { out.append('\b'); i += 2 }
+                'f' -> { out.append('\u000C'); i += 2 }
+                'u' -> {
+                    val code = if (i + 6 <= text.length) {
+                        text.substring(i + 2, i + 6).toIntOrNull(16)
+                    } else {
+                        null
+                    }
+
+                    if (code != null) {
+                        out.append(code.toChar())
+                        i += 6
+                    } else {
+                        out.append(next)
+                        i += 2
+                    }
+                }
+                else -> { out.append(next); i += 2 }
+            }
+        }
+
+        return out.toString()
+    }
+
+    /**
+     * CryptoJS parola modu: anahtar ve IV, MD5 tabanlı EVP_BytesToKey ile
+     * parola + tuzdan türetilir (JSON'daki "iv" alanı kullanılmaz).
+     * Çözülen metin çift kodlanmış JSON olabilir; ikisi de desteklenir.
+     */
     private fun decryptCryptoJs(
         password: String,
         encryptedJson: String
     ): JSONObject {
         val json = JSONObject(encryptedJson)
 
-        val ciphertext = Base64.decode(
-            json.getString("ct"),
-            Base64.DEFAULT
-        )
-
-        val salt = hexToBytes(json.getString("s"))
-        require(salt.size == 8)
-
-        val digest = MessageDigest.getInstance("MD5")
-        val derived = ByteArrayOutputStream()
-        var previous = ByteArray(0)
-        val passwordBytes = password.toByteArray(Charsets.UTF_8)
-
-        while (derived.size() < 48) {
-            digest.reset()
-            digest.update(previous)
-            digest.update(passwordBytes)
-            digest.update(salt)
-            previous = digest.digest()
-            derived.write(previous)
-        }
-
-        val bytes = derived.toByteArray()
-        val key = SecretKeySpec(
-            bytes.copyOfRange(0, 32),
-            "AES"
-        )
-        val iv = IvParameterSpec(
-            bytes.copyOfRange(32, 48)
-        )
-
-        val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
-        cipher.init(Cipher.DECRYPT_MODE, key, iv)
-
-        val plaintext = String(
-            cipher.doFinal(ciphertext),
-            Charsets.UTF_8
-        )
-
-        return JSONObject(plaintext)
-    }
-
-    private fun hexToBytes(text: String): ByteArray {
-        require(text.length % 2 == 0)
-
-        return ByteArray(text.length / 2) { index ->
-            text.substring(
-                index * 2,
-                index * 2 + 2
-            ).toInt(16).toByte()
-        }
-    }
-
-    private fun findPlainHlsUrl(text: String): String? {
-        return Regex(
-            """https?://[^\s"'<>\\]+\.m3u8(?:\?[^\s"'<>\\]*)?""",
-            RegexOption.IGNORE_CASE
-        ).find(text)?.value
-    }
-
-    private fun findStructuredMetadata(
-        document: Document
-    ): JSONObject? {
-        return document.select("script[type=application/ld+json]")
-            .mapNotNull { element ->
-                try {
-                    JSONObject(element.data())
-                } catch (_: Exception) {
-                    null
-                }
-            }
-            .firstOrNull { item ->
-                val type = item.optString("@type")
-                type == "Movie" || type == "TVSeries"
-            }
-    }
-
-    private fun jsonStrings(value: Any?): List<String> {
-        return when (value) {
-            is JSONArray -> {
-                (0 until value.length())
-                    .mapNotNull { index ->
-                        value.optString(index)
-                            .takeIf { it.isNotBlank() }
-                    }
-            }
-
-            is String -> {
-                value.takeIf { it.isNotBlank() }
-                    ?.let { listOf(it) }
-                    ?: emptyList()
-            }
-
-            else -> emptyList()
-        }
-    }
-
-    private fun firstText(
-        item: JSONObject,
-        vararg keys: String
-    ): String? {
-        for (key in keys) {
-            val value = item.optString(key)
-            if (value.isNotBlank() && value != "null") {
-                return value
-            }
-        }
-        return null
-    }
-
-    private fun resolve(base: String, value: String): String? {
-        if (value.isBlank()) return null
-
-        return try {
-            val uri = URI(base).resolve(value)
-            if (uri.scheme == "http" || uri.scheme == "https") {
-                uri.toString()
-            } else {
-                null
-            }
-        } catch (_: Exception) {
-            null
-        }
-    }
-}
+        val 
