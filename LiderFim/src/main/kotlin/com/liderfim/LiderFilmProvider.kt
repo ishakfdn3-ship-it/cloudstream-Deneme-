@@ -105,7 +105,7 @@ class LiderFilmProvider : MainAPI() {
             val slug = item.optString("slug").takeIf { it.isNotBlank() && it != "null" } ?: continue
             val title = Jsoup.parse(item.optString("title")).text().takeIf { it.isNotBlank() } ?: continue
             val type = item.optString("type").lowercase()
-            val poster = item.optString("poster").takeIf { it.startsWith("https://") || it.startsWith("http://") }
+            val poster = item.optString("poster").takeIf { item.optString("poster").startsWith("https://") || item.optString("poster").startsWith("http://") }
             val year = item.optString("year").toIntOrNull()
             val score = parseScore(item.optString("imdb_score"))
             val href = if (type == "series") "$mainUrl/dizi/$slug" else "$mainUrl/$slug"
@@ -202,14 +202,14 @@ class LiderFilmProvider : MainAPI() {
     ): Boolean {
         val document = getDocument(data)
 
-        // 1. Doğrudan iframe etiketlerini arar
-        var iframeUrl = document.selectFirst("iframe.player-iframe, iframe[src*='player'], iframe[src*='embed'], .video-player iframe")?.absUrl("src")
+        // 1. Sayfadaki tüm iframe kaynaklarını hedefle (ak21, qp21, ag2m5 dahil)
+        var iframeUrl = document.selectFirst("iframe.player-iframe, iframe[src*='player'], iframe[src*='embed'], iframe[src*='uk-traffic'], .video-player iframe")?.absUrl("src")
             ?: document.selectFirst("iframe")?.absUrl("src")
 
-        // 2. Eğer HTML'de iframe yoksa, script blokları içerisindeki embed/player linklerini tarar
+        // 2. HTML içinde doğrudan iframe yoksa script içerisindeki embed/player linklerini yakala
         if (iframeUrl.isNullOrBlank()) {
             val scriptContent = document.select("script").html()
-            val match = Regex("""['"](https?://[^'"]+/(?:embed|player|hls)/[^'"]+)['"]""").find(scriptContent)
+            val match = Regex("""['"](https?://[^'"]+/(?:embed|player|hls|hls2)/[^'"]+)['"]""").find(scriptContent)
             iframeUrl = match?.groupValues?.get(1)
         }
 
@@ -217,7 +217,37 @@ class LiderFilmProvider : MainAPI() {
             return false
         }
 
-        loadExtractor(iframeUrl, data, subtitleCallback, callback)
+        // Eğer link doğrudan .m3u8 veya ak21/qp21 uzantılı bir HLS akışı ise doğrudan ExtractorLink olarak ekle
+        if (iframeUrl.contains("uk-traffic") || iframeUrl.contains(".m3u8")) {
+            val streamHeaders = mapOf(
+                "Origin" to "https://x.ag2m5.cfd",
+                "Referer" to "https://x.ag2m5.cfd/",
+                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+            
+            val m3u8Target = if (iframeUrl.contains(".ts")) {
+                iframeUrl.replace(Regex("""seg-\d+-[^?]+\.ts"""), "master.m3u8")
+            } else {
+                iframeUrl
+            }
+
+            callback.invoke(
+                newExtractorLink(
+                    source = name,
+                    name = name,
+                    url = m3u8Target,
+                    type = ExtractorLinkType.M3U8
+                ) {
+                    this.referer = "https://x.ag2m5.cfd/"
+                    this.headers = streamHeaders
+                    this.quality = Qualities.Unknown.value
+                }
+            )
+        } else {
+            // Diğer standart iframe sağlayıcıları için (VidMoly vb.) genel loadExtractor kullan
+            loadExtractor(iframeUrl, data, subtitleCallback, callback)
+        }
+
         return true
     }
 }
