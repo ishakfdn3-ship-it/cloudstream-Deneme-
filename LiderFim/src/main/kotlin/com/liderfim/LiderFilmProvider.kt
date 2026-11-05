@@ -168,7 +168,7 @@ class LiderFilmProvider : MainAPI() {
                 val seasonNumber = Regex("/sezon-(\\d+)/").find(episodeUrl)?.groupValues?.get(1)?.toIntOrNull() ?: 1
                 val episodePoster = link.selectFirst("img")?.absUrl("src")?.takeIf { it.startsWith("http") }
                 val description = card.selectFirst(".episode-desc")?.text()
-                newEpisode(episodeUrl, fix = false) {
+                newEpisode(episodeUrl) {
                     name = episodeName
                     season = seasonNumber
                     episode = episodeNumber
