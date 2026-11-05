@@ -1,0 +1,12 @@
+package com.liderfilm
+
+import android.content.Context
+import com.lagradost.cloudstream3.plugins.CloudstreamPlugin
+import com.lagradost.cloudstream3.plugins.Plugin
+
+@CloudstreamPlugin
+class LiderFilmPlugin : Plugin() {
+    override fun load(context: Context) {
+        registerMainAPI(LiderFilmProvider())
+    }
+}
