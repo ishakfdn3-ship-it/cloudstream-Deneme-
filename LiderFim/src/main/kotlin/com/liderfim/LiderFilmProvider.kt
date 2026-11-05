@@ -202,12 +202,22 @@ class LiderFilmProvider : MainAPI() {
     ): Boolean {
         val document = getDocument(data)
 
-        val iframeUrl = document.selectFirst("iframe.player-iframe, iframe[src*='player'], iframe[src*='embed'], .video-player iframe")?.absUrl("src")
+        // 1. Doğrudan iframe etiketlerini arar
+        var iframeUrl = document.selectFirst("iframe.player-iframe, iframe[src*='player'], iframe[src*='embed'], .video-player iframe")?.absUrl("src")
             ?: document.selectFirst("iframe")?.absUrl("src")
-            ?: return false
+
+        // 2. Eğer HTML'de iframe yoksa, script blokları içerisindeki embed/player linklerini tarar
+        if (iframeUrl.isNullOrBlank()) {
+            val scriptContent = document.select("script").html()
+            val match = Regex("""['"](https?://[^'"]+/(?:embed|player|hls)/[^'"]+)['"]""").find(scriptContent)
+            iframeUrl = match?.groupValues?.get(1)
+        }
+
+        if (iframeUrl.isNullOrBlank()) {
+            return false
+        }
 
         loadExtractor(iframeUrl, data, subtitleCallback, callback)
-
         return true
     }
 }
