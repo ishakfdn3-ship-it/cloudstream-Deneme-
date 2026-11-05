@@ -51,9 +51,15 @@ class LiderFilmProvider : MainAPI() {
         } ?: card.selectFirst("img")?.attr("alt")?.takeIf { it.isNotBlank() }
         ?: return null
 
-        val poster = card.selectFirst("img")?.let {
-            it.absUrl("src").ifBlank { it.absUrl("data-src") }
-        }?.takeIf { it.startsWith("https://") || it.startsWith("http://") }
+        val image = card.select("img")
+
+val poster: String? = (
+    image.attr("src").ifBlank {
+        image.attr("data-src")
+    }
+).takeIf {
+    it.startsWith("https://") || it.startsWith("http://")
+}
 
         val yearText = if (isSeries) card.selectFirst(".year")?.text()
         else card.selectFirst(".movie-year")?.text()
