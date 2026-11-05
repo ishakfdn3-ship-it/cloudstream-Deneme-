@@ -8,14 +8,6 @@ import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.net.URLEncoder
 
-/**
- * Liderfilmizle provider.
- *
- * The implementation intentionally handles only the site's public catalogue and metadata.
- * It does not scrape third-party embed pages, defeat anti-bot pages, or reuse temporary
- * signed media URLs from HAR captures. loadLinks() returns false until the site owner provides
- * a documented, first-party playback endpoint and confirms that its streams are authorized.
- */
 class LiderFilmProvider : MainAPI() {
     override var mainUrl = "https://liderfilmizle.vip"
     override var name = "LiderFilm"
@@ -130,7 +122,6 @@ val poster: String? = (
                     this.year = year
                     this.score = score
                 }
-                // Collections are not exposed as playable media entries.
             }
         }
         return output
@@ -174,7 +165,7 @@ val poster: String? = (
                 val seasonNumber = Regex("/sezon-(\\d+)/").find(episodeUrl)?.groupValues?.get(1)?.toIntOrNull() ?: 1
                 val episodePoster = link.selectFirst("img")?.absUrl("src")?.takeIf { it.startsWith("http") }
                 val description = card.selectFirst(".episode-desc")?.text()
-                newEpisode(episodeUrl) {
+                newEpisode(episodeUrl, fix = false) {
                     name = episodeName
                     season = seasonNumber
                     episode = episodeNumber
@@ -204,14 +195,25 @@ val poster: String? = (
     }
 
     /**
-     * Playback is deliberately not guessed from HAR data. The captured player redirects to
-     * third-party embed/CDN hosts and uses short-lived signed URLs. Supply a documented,
-     * first-party stream API before enabling playback here.
+     * loadLinks güncellendi: Sayfadaki oynatıcı iframe kaynağını bularak 
+     * CloudStream extractor sistemine yönlendirir.
      */
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
-    ): Boolean = false
+    ): Boolean {
+        val document = getDocument(data)
+
+        // Sayfadaki iframe etiketini yakalıyoruz
+        val iframeUrl = document.selectFirst("iframe.player-iframe, iframe[src*='player'], iframe[src*='embed'], .video-player iframe")?.absUrl("src")
+            ?: document.selectFirst("iframe")?.absUrl("src")
+            ?: return false
+
+        // Bulunan iframe adresini extractor ile çözüyoruz
+        loadExtractor(iframeUrl, data, subtitleCallback, callback)
+
+        return true
+    }
 }
