@@ -44,14 +44,13 @@ class LiderFilmProvider : MainAPI() {
         ?: return null
 
         val image = card.select("img")
-
-val poster: String? = (
-    image.attr("src").ifBlank {
-        image.attr("data-src")
-    }
-).takeIf {
-    it.startsWith("https://") || it.startsWith("http://")
-}
+        val poster: String? = (
+            image.attr("src").ifBlank {
+                image.attr("data-src")
+            }
+        ).takeIf {
+            it.startsWith("https://") || it.startsWith("http://")
+        }
 
         val yearText = if (isSeries) card.selectFirst(".year")?.text()
         else card.selectFirst(".movie-year")?.text()
@@ -165,7 +164,8 @@ val poster: String? = (
                 val seasonNumber = Regex("/sezon-(\\d+)/").find(episodeUrl)?.groupValues?.get(1)?.toIntOrNull() ?: 1
                 val episodePoster = link.selectFirst("img")?.absUrl("src")?.takeIf { it.startsWith("http") }
                 val description = card.selectFirst(".episode-desc")?.text()
-                newEpisode(episodeUrl, fix = false) {
+                
+                newEpisode(episodeUrl) {
                     name = episodeName
                     season = seasonNumber
                     episode = episodeNumber
@@ -194,10 +194,6 @@ val poster: String? = (
         }
     }
 
-    /**
-     * loadLinks güncellendi: Sayfadaki oynatıcı iframe kaynağını bularak 
-     * CloudStream extractor sistemine yönlendirir.
-     */
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -206,12 +202,10 @@ val poster: String? = (
     ): Boolean {
         val document = getDocument(data)
 
-        // Sayfadaki iframe etiketini yakalıyoruz
         val iframeUrl = document.selectFirst("iframe.player-iframe, iframe[src*='player'], iframe[src*='embed'], .video-player iframe")?.absUrl("src")
             ?: document.selectFirst("iframe")?.absUrl("src")
             ?: return false
 
-        // Bulunan iframe adresini extractor ile çözüyoruz
         loadExtractor(iframeUrl, data, subtitleCallback, callback)
 
         return true
