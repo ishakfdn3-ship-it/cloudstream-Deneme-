@@ -1,28 +1,23 @@
-plugins {
-    id 'com.android.library'
-    id 'kotlin-android'
-    id 'kotlin-kapt'
-}
+version = 1
 
-android {
-    compileSdk 34
+cloudstream {
+    language = "tr"
+    description = "FilmModu Eklentisi"
+    authors = listOf("İshak")
 
-    defaultConfig {
-        minSdk 21
-        targetSdk 34
-    }
+    /**
+     * Durum kodları:
+     * 0: Down (Çalışmıyor)
+     * 1: Ok (Sorunsuz)
+     * 2: Slow (Yavaş)
+     * 3: Beta only (Sadece Beta)
+     */
+    status = 1
 
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
-    }
+    tvTypes = listOf(
+        "Movie",
+        "TvSeries"
+    )
 
-    kotlinOptions {
-        jvmTarget = '1.8'
-    }
-}
-
-dependencies {
-    implementation 'androidx.core:core-ktx:1.12.0'
-    implementation 'com.github.recloudstream:cloudstream:v3.7.0'
+    iconUrl = "https://www.google.com/s2/favicons?domain=filmmodu.cc&sz=%size%"
 }
