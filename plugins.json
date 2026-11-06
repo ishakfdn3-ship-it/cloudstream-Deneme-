@@ -164,10 +164,10 @@
         "name": "FilmMakinesi"
     },
     {
-        "fileHash": "sha256-500f0ba089ffade1bf6427c68d5aa022fc8a158cbe010a5c690caecde657e4ad",
+        "fileHash": "sha256-91b4181c0be3e9c72d49c7d36ff0e2e14b0586c6b2c7c8b3417444df4b75a5a4",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/ishakfdn3-ship-it/cloudstream-Deneme-",
-        "fileSize": 24799,
+        "fileSize": 23531,
         "status": 3,
         "language": "tr",
         "authors": [
