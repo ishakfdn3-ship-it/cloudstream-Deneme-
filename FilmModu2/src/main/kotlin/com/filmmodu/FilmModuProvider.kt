@@ -621,10 +621,3 @@ private object VidmixiDecoder {
         }
     }
 }
-
-@CloudstreamPlugin
-class FilmModuPlugin : Plugin() {
-    override fun load(context: Context) {
-        registerMainAPI(FilmModu())
-    }
-}
