@@ -202,11 +202,11 @@ class LiderFilmProvider : MainAPI() {
     ): Boolean {
         val document = getDocument(data)
 
-        // 1. Sayfadaki tüm iframe kaynaklarını hedefle (ak21, qp21, ag2m5 dahil)
+        // 1. Sayfadaki tüm olası iframe kaynaklarını hedefle (ak21, qp21, ag2m5, uk-traffic dahil)
         var iframeUrl = document.selectFirst("iframe.player-iframe, iframe[src*='player'], iframe[src*='embed'], iframe[src*='uk-traffic'], .video-player iframe")?.absUrl("src")
             ?: document.selectFirst("iframe")?.absUrl("src")
 
-        // 2. HTML içinde doğrudan iframe yoksa script içerisindeki embed/player linklerini yakala
+        // 2. HTML içinde doğrudan iframe yoksa, script içerisindeki embed/player linklerini yakala
         if (iframeUrl.isNullOrBlank()) {
             val scriptContent = document.select("script").html()
             val match = Regex("""['"](https?://[^'"]+/(?:embed|player|hls|hls2)/[^'"]+)['"]""").find(scriptContent)
@@ -217,14 +217,15 @@ class LiderFilmProvider : MainAPI() {
             return false
         }
 
-        // Eğer link doğrudan .m3u8 veya ak21/qp21 uzantılı bir HLS akışı ise doğrudan ExtractorLink olarak ekle
-        if (iframeUrl.contains("uk-traffic") || iframeUrl.contains(".m3u8")) {
+        // 3. Eğer yakalanan link ak21/qp21 (uk-traffic) veya m3u8 tabanlı bir HLS akışı ise
+        if (iframeUrl.contains("uk-traffic") || iframeUrl.contains(".m3u8") || iframeUrl.contains(".ts")) {
             val streamHeaders = mapOf(
                 "Origin" to "https://x.ag2m5.cfd",
                 "Referer" to "https://x.ag2m5.cfd/",
                 "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             )
             
+            // Eğer doğrudan .ts segment linki yakalandıysa bunu master.m3u8 formatına çevir
             val m3u8Target = if (iframeUrl.contains(".ts")) {
                 iframeUrl.replace(Regex("""seg-\d+-[^?]+\.ts"""), "master.m3u8")
             } else {
@@ -244,7 +245,7 @@ class LiderFilmProvider : MainAPI() {
                 }
             )
         } else {
-            // Diğer standart iframe sağlayıcıları için (VidMoly vb.) genel loadExtractor kullan
+            // Diğer standart iframe sağlayıcıları (VidMoly vb.) için genel loadExtractor kullan
             loadExtractor(iframeUrl, data, subtitleCallback, callback)
         }
 
