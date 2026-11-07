@@ -296,12 +296,12 @@ class YabanciDiziIzle : MainAPI() {
                                 referer = pageUrl,
                                 headers = mapOf("User-Agent" to StreamHelper.MOBILE_UA)
                             ).text
-                            val streams = StreamHelper.extractStreamUrls(text)
-                            for (stream in streams) {
+                            val streams = StreamHelper.extractStreams(text)
+                            for (s in streams) {
                                 wrappedCallback(
-                                    newExtractorLink("$name ($tabName)", "$name ($tabName)", stream, ExtractorLinkType.M3U8) {
+                                    newExtractorLink("$name ($tabName)", "$name ($tabName)", s.url, s.type) {
                                         this.referer = cleanEmbed
-                                        this.quality = Qualities.Unknown.value
+                                        this.quality = s.quality
                                         this.headers = mapOf(
                                             "User-Agent" to StreamHelper.MOBILE_UA,
                                             "Referer" to cleanEmbed
