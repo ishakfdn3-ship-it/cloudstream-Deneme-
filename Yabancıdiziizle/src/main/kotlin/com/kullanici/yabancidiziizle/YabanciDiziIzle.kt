@@ -1,4 +1,4 @@
-package com.kullanici.yabancidiziizle
+herepackage com.kullanici.yabancidiziizle
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
@@ -50,7 +50,7 @@ class YabanciDiziIzle : MainAPI() {
     }
 
     private fun iframeSrcOf(iframe: Element): String? {
-        val raw = listOf("data-src", "data-lazy-src", "src")
+        val raw = listOf("data-litespeed-src", "data-src", "data-lazy-src", "src")
             .map { iframe.attr(it).trim() }
             .firstOrNull {
                 it.isNotBlank() &&
