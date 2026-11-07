@@ -29,29 +29,54 @@ internal object StreamHelper {
             .replace("&amp;", "&")
     }
 
-    fun extractStreamUrls(rawText: String): List<String> {
-        val unpacked = getAndUnpack(rawText)
-        val clean = unescapeHtmlAndJson("$rawText\n$unpacked")
+    data class Stream(val url: String, val type: ExtractorLinkType, val quality: Int)
 
-        val results = mutableSetOf<String>()
-
-        // 1) okcdn.ru / video.m3u8 / strm.yandex.net / genel .m3u8 kalıpları
-        val urlRegex = Regex("""https?://[^\s"'<>\\]+(?:\.m3u8|video\.m3u8|videoPlayerCdn|/hls/)[^\s"'<>\\]*""")
-        urlRegex.findAll(clean).forEach { m ->
-            results.add(m.value.trimEnd('\\', '"', '\'', ',', ';', ')', ']'))
-        }
-
-        // 2) Dzen JSON içindeki "url":"https://..." (okcdn.ru veya yandex streamleri)
-        val jsonUrlRegex = Regex(""""url"\s*:\s*"(https?://[^"]+(?:okcdn\.ru|yandex\.net|dzeninfra\.ru|\.m3u8|\.mp4)[^"]*)"""")
-        jsonUrlRegex.findAll(clean).forEach { m ->
-            val u = m.groupValues[1]
-            if (!u.contains("avatars.") && !u.endsWith(".jpg") && !u.endsWith(".png")) {
-                results.add(u)
-            }
-        }
-
-        return results.toList()
+    private fun qualityOf(label: String): Int = when (label.lowercase()) {
+        "tiny" -> 144
+        "lowest" -> 240
+        "low" -> 360
+        "medium" -> 480
+        "high" -> 720
+        "fullhd" -> 1080
+        else -> Qualities.Unknown.value
     }
+
+    private fun typeOfUrl(u: String): ExtractorLinkType = when {
+        u.contains(".mpd") || u.contains("dzen_dash=dash") -> ExtractorLinkType.DASH
+        u.contains(".m3u8") || u.contains("video.m3u8") || u.contains("dzen_dash=hls") || u.contains("/hls/") -> ExtractorLinkType.M3U8
+        else -> ExtractorLinkType.VIDEO
+    }
+
+    // Dzen embed sayfasındaki "streams":[{"url":"...","type":"hls"|"dash"|"tiny"|...}] yapısını okur.
+    fun extractStreams(rawText: String): List<Stream> {
+        val unpacked = try { getAndUnpack(rawText) } catch (_: Throwable) { "" }
+        val clean = unescapeHtmlAndJson("$rawText\n$unpacked")
+        val out = LinkedHashMap<String, Stream>()
+
+        val pair = Regex(""""url"\s*:\s*"(https?://[^"]+)"\s*,\s*"type"\s*:\s*"([a-zA-Z0-9_]+)"""")
+        for (m in pair.findAll(clean)) {
+            val u = m.groupValues[1]
+            val t = m.groupValues[2].lowercase()
+            if (u.contains("avatars.") || u.endsWith(".jpg") || u.endsWith(".png")) continue
+            val s = when (t) {
+                "hls" -> Stream(u, ExtractorLinkType.M3U8, Qualities.Unknown.value)
+                "dash" -> Stream(u, ExtractorLinkType.DASH, Qualities.Unknown.value)
+                else -> Stream(u, ExtractorLinkType.VIDEO, qualityOf(t))
+            }
+            out[u] = s
+        }
+
+        // Yedek: genel m3u8 / mp4 kalıpları
+        val urlRegex = Regex("""https?://[^\s"'<>\\]+?(?:\.m3u8|video\.m3u8|videoPlayerCdn|/hls/|\.mp4)[^\s"'<>\\]*""")
+        for (m in urlRegex.findAll(clean)) {
+            val u = m.value.trimEnd('\\', '"', '\'', ',', ';', ')', ']')
+            if (u.contains("avatars.") || u.endsWith(".jpg") || u.endsWith(".png")) continue
+            if (!out.containsKey(u)) out[u] = Stream(u, typeOfUrl(u), Qualities.Unknown.value)
+        }
+        return out.values.toList()
+    }
+
+    fun extractStreamUrls(rawText: String): List<String> = extractStreams(rawText).map { it.url }
 }
 
 class DzenRuExtractor : ExtractorApi() {
@@ -65,7 +90,7 @@ class DzenRuExtractor : ExtractorApi() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        val foundStreams = mutableSetOf<String>()
+        val foundStreams = LinkedHashMap<String, StreamHelper.Stream>()
         val embedId = url.substringAfter("/embed/").substringBefore("?").substringBefore("/").trim()
 
         val commonHeaders = mapOf(
@@ -94,7 +119,7 @@ class DzenRuExtractor : ExtractorApi() {
                             "Origin" to "https://dzen.ru"
                         )
                     ).text
-                    foundStreams.addAll(StreamHelper.extractStreamUrls(apiText))
+                    StreamHelper.extractStreams(apiText).forEach { foundStreams[it.url] = it }
                 } catch (_: Exception) {
                 }
             }
@@ -104,7 +129,7 @@ class DzenRuExtractor : ExtractorApi() {
         try {
             val cleanEmbedUrl = if (embedId.isNotBlank()) "https://dzen.ru/embed/$embedId" else url
             val firstRes = app.get(cleanEmbedUrl, referer = referer ?: "https://yabancidiziizle.in/", headers = commonHeaders)
-            foundStreams.addAll(StreamHelper.extractStreamUrls(firstRes.text))
+            StreamHelper.extractStreams(firstRes.text).forEach { foundStreams[it.url] = it }
 
             // Eğer ilk istekte çerez atandıysa veya _csrf yönlendirmesi varsa çerezlerle tekrar çek
             if (foundStreams.isEmpty() && firstRes.cookies.isNotEmpty()) {
@@ -114,21 +139,16 @@ class DzenRuExtractor : ExtractorApi() {
                     headers = commonHeaders,
                     cookies = firstRes.cookies
                 )
-                foundStreams.addAll(StreamHelper.extractStreamUrls(secondRes.text))
+                StreamHelper.extractStreams(secondRes.text).forEach { foundStreams[it.url] = it }
             }
         } catch (_: Exception) {
         }
 
-        for (stream in foundStreams) {
-            val linkType = when {
-                stream.contains(".mpd") -> ExtractorLinkType.DASH
-                stream.contains(".m3u8") || stream.contains("video.m3u8") -> ExtractorLinkType.M3U8
-                else -> ExtractorLinkType.VIDEO
-            }
+        for (s in foundStreams.values) {
             callback(
-                newExtractorLink(name, "$name (HLS)", stream, linkType) {
+                newExtractorLink(name, "$name ${if (s.quality > 0) s.quality.toString() + "p" else s.type.name}", s.url, s.type) {
                     this.referer = "https://dzen.ru/"
-                    this.quality = Qualities.Unknown.value
+                    this.quality = s.quality
                     this.headers = mapOf(
                         "User-Agent" to StreamHelper.MOBILE_UA,
                         "Origin" to "https://dzen.ru",
@@ -165,7 +185,7 @@ class LuffytraExtractor : ExtractorApi() {
         val directStreams = StreamHelper.extractStreamUrls(text)
         for (stream in directStreams) {
             callback(
-                newExtractorLink(name, name, stream, ExtractorLinkType.M3U8) {
+                newExtractorLink(name, name, stream, if (stream.contains(".mp4")) ExtractorLinkType.VIDEO else ExtractorLinkType.M3U8) {
                     this.referer = url
                     this.quality = Qualities.Unknown.value
                     this.headers = mapOf("User-Agent" to StreamHelper.MOBILE_UA, "Referer" to url)
