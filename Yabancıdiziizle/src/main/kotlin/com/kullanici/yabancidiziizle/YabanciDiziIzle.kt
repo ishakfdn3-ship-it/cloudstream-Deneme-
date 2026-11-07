@@ -49,6 +49,23 @@ class YabanciDiziIzle : MainAPI() {
         return fixUrlNull(src)
     }
 
+    private fun iframeSrcOf(iframe: Element): String? {
+        val raw = listOf("data-src", "data-lazy-src", "src")
+            .map { iframe.attr(it).trim() }
+            .firstOrNull {
+                it.isNotBlank() &&
+                    !it.equals("about:blank", ignoreCase = true) &&
+                    !it.startsWith("data:") &&
+                    !it.startsWith("javascript:")
+            } ?: return null
+        val fixed = fixUrlNull(raw) ?: return null
+        val lower = fixed.lowercase()
+        if (lower.contains("facebook.com") || lower.contains("twitter.com") || lower.contains("youtube.com") || lower.contains("google.com")) {
+            return null
+        }
+        return fixed
+    }
+
     private fun Element.toCardResult(): SearchResponse? {
         val a = selectFirst("div.film-ismi a[href], div.serie-name a[href], h3 a[href], a.cmfp-poster[href], div.poster a[href], a[href]")
             ?: return null
@@ -62,7 +79,7 @@ class YabanciDiziIzle : MainAPI() {
         if (cleanName.isBlank()) return null
 
         val epSuffix = selectFirst("div.list-episodes div.episode-name a, div.episode-name a")?.text()?.trim().orEmpty()
-        val finalTitle = if (epSuffix.isNotBlank() && ! epSuffix.matches(Regex("""\d{4}"""))) {
+        val finalTitle = if (epSuffix.isNotBlank() && !epSuffix.matches(Regex("""\d{4}"""))) {
             "$cleanName - $epSuffix"
         } else {
             cleanName
@@ -227,47 +244,76 @@ class YabanciDiziIzle : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         val mainDoc = app.get(data, referer = "$mainUrl/").document
-        var found = false
+        var emittedCount = 0
 
-        val pages = mutableListOf(data)
-        mainDoc.select("div.diziplus_sources div.sources a.post-page-numbers[href]").forEach { a ->
-            val h = fixUrlNull(a.attr("href"))
-            if (!h.isNullOrBlank() && !pages.contains(h)) pages.add(h)
+        val wrappedCallback: (ExtractorLink) -> Unit = { link ->
+            emittedCount++
+            callback(link)
         }
 
-        for (pageUrl in pages) {
+        val curTab = mainDoc.selectFirst("div.diziplus_sources div.sources span.current_dil")?.text()?.trim().orEmpty().ifBlank { "Kaynak 1" }
+        val pages = mutableListOf(data to curTab)
+        mainDoc.select("div.diziplus_sources div.sources a.post-page-numbers[href]").forEach { a ->
+            val h = fixUrlNull(a.attr("href"))
+            val t = a.text().trim().ifBlank { "Alternatif" }
+            if (!h.isNullOrBlank() && pages.none { it.first == h }) {
+                pages.add(h to t)
+            }
+        }
+
+        for ((pageUrl, tabName) in pages) {
             try {
                 val doc = if (pageUrl == data) mainDoc else app.get(pageUrl, referer = data).document
-                val iframes = doc.select("div.dizialani iframe[src], div.dizialani iframe[data-src], div#video-player-box iframe[src]")
-                    .mapNotNull { fixUrlNull(it.attr("src").ifBlank { it.attr("data-src") }) }
-                    .filter { u ->
-                        val l = u.lowercase()
-                        !l.contains("facebook.com") && !l.contains("twitter.com") && !l.contains("youtube.com")
-                    }
-                    .distinct()
+                val embeds = mutableSetOf<String>()
 
-                for (embed in iframes) {
+                doc.select("div.dizialani iframe, div.video-container iframe, div#video-player-box iframe, iframe")
+                    .mapNotNull { iframeSrcOf(it) }
+                    .forEach { embeds.add(it) }
+
+                doc.select("[data-embed]").forEach { el ->
+                    val rawEmbed = el.attr("data-embed")
+                    Regex("""src=["']([^"']+)["']""").find(rawEmbed)?.groupValues?.getOrNull(1)?.let { s ->
+                        fixUrlNull(s)?.let { embeds.add(it) }
+                    }
+                }
+
+                for (embed in embeds) {
+                    val beforeCount = emittedCount
                     try {
-                        if (loadExtractor(embed, pageUrl, subtitleCallback, callback)) {
-                            found = true
-                        } else {
-                            val text = app.get(embed, referer = pageUrl).text
-                            val combined = "$text\n${getAndUnpack(text)}"
-                            Regex("""https?:\\?/\?/[^"'\s\\]+\.m3u8[^"'\s\\]*""").findAll(combined)
-                                .map { it.value.replace("\\/", "/").replace("\\u0026", "&").replace("&amp;", "&") }
-                                .distinct()
-                                .forEach { m3u8 ->
-                                    found = true
-                                    callback(newExtractorLink(name, name, m3u8, ExtractorLinkType.M3U8) {
-                                        this.referer = embed
-                                        this.quality = Qualities.Unknown.value
-                                    })
-                                }
-                        }
+                        loadExtractor(embed, pageUrl, subtitleCallback, wrappedCallback)
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
                         logError(e)
+                    }
+
+                    // Eğer loadExtractor (veya kayıtlı Extractor) hiçbir link üretmediyse doğrudan yedek tarayıcıyı çalıştır
+                    if (emittedCount == beforeCount) {
+                        try {
+                            val cleanEmbed = embed.substringBefore("?").takeIf { embed.contains("dzen.ru") } ?: embed
+                            val text = app.get(
+                                cleanEmbed,
+                                referer = pageUrl,
+                                headers = mapOf("User-Agent" to StreamHelper.MOBILE_UA)
+                            ).text
+                            val streams = StreamHelper.extractStreamUrls(text)
+                            for (stream in streams) {
+                                wrappedCallback(
+                                    newExtractorLink("$name ($tabName)", "$name ($tabName)", stream, ExtractorLinkType.M3U8) {
+                                        this.referer = cleanEmbed
+                                        this.quality = Qualities.Unknown.value
+                                        this.headers = mapOf(
+                                            "User-Agent" to StreamHelper.MOBILE_UA,
+                                            "Referer" to cleanEmbed
+                                        )
+                                    }
+                                )
+                            }
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            logError(e)
+                        }
                     }
                 }
             } catch (e: CancellationException) {
@@ -276,7 +322,7 @@ class YabanciDiziIzle : MainAPI() {
                 logError(e)
             }
         }
-        return found
+        return emittedCount > 0
     }
 }
 // SON
