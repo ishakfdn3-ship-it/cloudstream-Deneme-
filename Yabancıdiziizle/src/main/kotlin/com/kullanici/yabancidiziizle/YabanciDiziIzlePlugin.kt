@@ -1,4 +1,4 @@
-herepackage com.kullanici.yabancidiziizle
+package com.kullanici.yabancidiziizle
 
 import android.content.Context
 import com.lagradost.cloudstream3.*
