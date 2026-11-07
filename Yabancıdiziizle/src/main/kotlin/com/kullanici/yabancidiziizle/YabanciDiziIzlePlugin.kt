@@ -32,11 +32,25 @@ internal object StreamHelper {
     fun extractStreamUrls(rawText: String): List<String> {
         val unpacked = getAndUnpack(rawText)
         val clean = unescapeHtmlAndJson("$rawText\n$unpacked")
-        val regex = Regex("""https?://[^\s"'<>\\]+(?:\.m3u8|videoPlayerCdn)[^\s"'<>\\]*""")
-        return regex.findAll(clean)
-            .map { it.value.trimEnd('\\', '"', '\'', ',', ';', ')') }
-            .distinct()
-            .toList()
+
+        val results = mutableSetOf<String>()
+
+        // 1) okcdn.ru / video.m3u8 / strm.yandex.net / genel .m3u8 kalıpları
+        val urlRegex = Regex("""https?://[^\s"'<>\\]+(?:\.m3u8|video\.m3u8|videoPlayerCdn|/hls/)[^\s"'<>\\]*""")
+        urlRegex.findAll(clean).forEach { m ->
+            results.add(m.value.trimEnd('\\', '"', '\'', ',', ';', ')', ']'))
+        }
+
+        // 2) Dzen JSON içindeki "url":"https://..." (okcdn.ru veya yandex streamleri)
+        val jsonUrlRegex = Regex(""""url"\s*:\s*"(https?://[^"]+(?:okcdn\.ru|yandex\.net|dzeninfra\.ru|\.m3u8|\.mp4)[^"]*)"""")
+        jsonUrlRegex.findAll(clean).forEach { m ->
+            val u = m.groupValues[1]
+            if (!u.contains("avatars.") && !u.endsWith(".jpg") && !u.endsWith(".png")) {
+                results.add(u)
+            }
+        }
+
+        return results.toList()
     }
 }
 
@@ -51,17 +65,68 @@ class DzenRuExtractor : ExtractorApi() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        val cleanUrl = url.substringBefore("?").ifBlank { url }
-        val reqHeaders = mapOf(
-            "User-Agent" to StreamHelper.MOBILE_UA,
-            "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
-        )
-        val text = app.get(cleanUrl, referer = referer ?: "$mainUrl/", headers = reqHeaders).text
-        val streams = StreamHelper.extractStreamUrls(text)
+        val foundStreams = mutableSetOf<String>()
+        val embedId = url.substringAfter("/embed/").substringBefore("?").substringBefore("/").trim()
 
-        for (stream in streams) {
+        val commonHeaders = mapOf(
+            "User-Agent" to StreamHelper.MOBILE_UA,
+            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Sec-Fetch-Dest" to "iframe",
+            "Sec-Fetch-Mode" to "navigate",
+            "Sec-Fetch-Site" to "cross-site"
+        )
+
+        // ADIM 1: Yandex VH Player JSON API (og:vh-uuid üzerinden doğrudan JSON çekimi)
+        if (embedId.isNotBlank()) {
+            val apiUrls = listOf(
+                "https://frontend.vh.yandex.ru/player/$embedId.json?from=dzen&service=ya-video",
+                "https://frontend.vh.yandex.ru/v23/player/$embedId.json?from=dzen&service=ya-video"
+            )
+            for (apiUrl in apiUrls) {
+                try {
+                    val apiText = app.get(
+                        apiUrl,
+                        referer = "https://dzen.ru/",
+                        headers = mapOf(
+                            "User-Agent" to StreamHelper.MOBILE_UA,
+                            "Accept" to "application/json",
+                            "Origin" to "https://dzen.ru"
+                        )
+                    ).text
+                    foundStreams.addAll(StreamHelper.extractStreamUrls(apiText))
+                } catch (_: Exception) {
+                }
+            }
+        }
+
+        // ADIM 2: Dzen Embed HTML sayfası (Çerez ve yönlendirme takibi ile)
+        try {
+            val cleanEmbedUrl = if (embedId.isNotBlank()) "https://dzen.ru/embed/$embedId" else url
+            val firstRes = app.get(cleanEmbedUrl, referer = referer ?: "https://yabancidiziizle.in/", headers = commonHeaders)
+            foundStreams.addAll(StreamHelper.extractStreamUrls(firstRes.text))
+
+            // Eğer ilk istekte çerez atandıysa veya _csrf yönlendirmesi varsa çerezlerle tekrar çek
+            if (foundStreams.isEmpty() && firstRes.cookies.isNotEmpty()) {
+                val secondRes = app.get(
+                    cleanEmbedUrl,
+                    referer = "https://dzen.ru/",
+                    headers = commonHeaders,
+                    cookies = firstRes.cookies
+                )
+                foundStreams.addAll(StreamHelper.extractStreamUrls(secondRes.text))
+            }
+        } catch (_: Exception) {
+        }
+
+        for (stream in foundStreams) {
+            val linkType = when {
+                stream.contains(".mpd") -> ExtractorLinkType.DASH
+                stream.contains(".m3u8") || stream.contains("video.m3u8") -> ExtractorLinkType.M3U8
+                else -> ExtractorLinkType.VIDEO
+            }
             callback(
-                newExtractorLink(name, "$name (HLS)", stream, ExtractorLinkType.M3U8) {
+                newExtractorLink(name, "$name (HLS)", stream, linkType) {
                     this.referer = "https://dzen.ru/"
                     this.quality = Qualities.Unknown.value
                     this.headers = mapOf(
@@ -88,30 +153,32 @@ class LuffytraExtractor : ExtractorApi() {
     ) {
         val reqHeaders = mapOf(
             "User-Agent" to StreamHelper.MOBILE_UA,
-            "Accept-Language" to "tr-TR,tr;q=0.9"
+            "Accept-Language" to "tr-TR,tr;q=0.9",
+            "Sec-Fetch-Dest" to "iframe",
+            "Sec-Fetch-Mode" to "navigate",
+            "Sec-Fetch-Site" to "cross-site"
         )
-        val res = app.get(url, referer = referer ?: "$mainUrl/", headers = reqHeaders)
+        val res = app.get(url, referer = referer ?: "https://yabancidiziizle.in/", headers = reqHeaders)
         val text = res.text
 
-        // 1) Doğrudan veya Unpacked JS içindeki .m3u8 / .mp4 linkleri
+        // 1) Doğrudan veya Unpacked JS içindeki stream linkleri
         val directStreams = StreamHelper.extractStreamUrls(text)
         for (stream in directStreams) {
             callback(
                 newExtractorLink(name, name, stream, ExtractorLinkType.M3U8) {
                     this.referer = url
                     this.quality = Qualities.Unknown.value
-                    this.headers = mapOf(
-                        "User-Agent" to StreamHelper.MOBILE_UA,
-                        "Referer" to url
-                    )
+                    this.headers = mapOf("User-Agent" to StreamHelper.MOBILE_UA, "Referer" to url)
                 }
             )
         }
 
-        // 2) FirePlayer / AJAX POST yapısındaysa (/player/index.php?data=...&do=getVideo)
-        val fireMatch = Regex("""FirePlayer\s*\(\s*["']([a-zA-Z0-9]+)["']""").find(text)
-        if (fireMatch != null && directStreams.isEmpty()) {
-            val hash = fireMatch.groupValues[1]
+        // 2) FirePlayer / Pichive / GDrivePlayer tarzı AJAX POST kontrolü
+        val hashMatch = Regex("""(?:FirePlayer|Player)\s*\(\s*["']([a-zA-Z0-9_\-=]+)["']""").find(text)
+            ?: Regex("""data\s*[:=]\s*["']([a-zA-Z0-9_\-=]{16,})["']""").find(text)
+
+        if (hashMatch != null && directStreams.isEmpty()) {
+            val hash = hashMatch.groupValues[1]
             val host = Regex("""https?://[^/]+""").find(url)?.value ?: mainUrl
             val ajaxUrl = "$host/player/index.php?data=$hash&do=getVideo"
             val postText = app.post(
@@ -122,12 +189,12 @@ class LuffytraExtractor : ExtractorApi() {
                     "Origin" to host,
                     "X-Requested-With" to "XMLHttpRequest"
                 ),
-                data = mapOf("hash" to hash, "r" to (referer ?: ""))
+                data = mapOf("hash" to hash, "r" to (referer ?: "https://yabancidiziizle.in/"))
             ).text
 
             val cleanPost = StreamHelper.unescapeHtmlAndJson(postText)
-            val videoSrc = Regex(""""videoSource"\s*:\s*"([^"]+)"""").find(cleanPost)?.groupValues?.getOrNull(1)
-                ?: Regex(""""securedLink"\s*:\s*"([^"]+)"""").find(cleanPost)?.groupValues?.getOrNull(1)
+            val videoSrc = Regex(""""(?:videoSource|securedLink|file)"\s*:\s*"([^"]+)"""")
+                .find(cleanPost)?.groupValues?.getOrNull(1)
 
             if (!videoSrc.isNullOrBlank()) {
                 callback(
@@ -140,5 +207,5 @@ class LuffytraExtractor : ExtractorApi() {
             }
         }
     }
-                         }
-                         
+                                 }
+                                 
