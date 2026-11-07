@@ -277,10 +277,24 @@ class YabanciDiziIzle : MainAPI() {
                     }
                 }
 
+                // JS/script içine gömülmüş embed adreslerini ham HTML'den de yakala (iframe DOM'da yoksa)
+                val rawHtml = doc.html().replace("\\/", "/")
+                Regex("""https?://(?:www\.)?dzen\.ru/embed/[A-Za-z0-9_\-]+""").findAll(rawHtml)
+                    .forEach { embeds.add(it.value) }
+                Regex("""https?://[^\s"'<>\\]*(?:luffytra|embed|player)[^\s"'<>\\]*""", RegexOption.IGNORE_CASE).findAll(rawHtml)
+                    .map { it.value }
+                    .filter { !it.contains("youtube") && !it.contains("facebook") && !it.contains("twitter") && !it.contains(Regex("""\.(js|css|png|jpg|svg|webp)(\?|$)""")) }
+                    .forEach { embeds.add(it) }
+                android.util.Log.d("YDI", "page=$pageUrl embeds=$embeds")
+
                 for (embed in embeds) {
                     val beforeCount = emittedCount
                     try {
-                        loadExtractor(embed, pageUrl, subtitleCallback, wrappedCallback)
+                        if (embed.contains("dzen.ru/embed/")) {
+                            DzenRuExtractor().getUrl(embed, pageUrl, subtitleCallback, wrappedCallback)
+                        } else {
+                            loadExtractor(embed, pageUrl, subtitleCallback, wrappedCallback)
+                        }
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
@@ -296,6 +310,7 @@ class YabanciDiziIzle : MainAPI() {
                                 referer = pageUrl,
                                 headers = mapOf("User-Agent" to StreamHelper.MOBILE_UA)
                             ).text
+                            android.util.Log.d("YDI", "fallback len=${text.length} head=${text.take(200)}")
                             val streams = StreamHelper.extractStreams(text)
                             for (s in streams) {
                                 wrappedCallback(
