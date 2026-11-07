@@ -1,4 +1,4 @@
-package com.kullanici.yabancidiziizle
+herepackage com.kullanici.yabancidiziizle
 
 import android.content.Context
 import com.lagradost.cloudstream3.*
@@ -227,5 +227,4 @@ class LuffytraExtractor : ExtractorApi() {
             }
         }
     }
-                                 }
-                                 
+}
