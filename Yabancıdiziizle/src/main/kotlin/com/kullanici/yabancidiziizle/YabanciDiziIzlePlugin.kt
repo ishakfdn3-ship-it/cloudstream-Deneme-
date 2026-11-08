@@ -12,6 +12,7 @@ class YabanciDiziIzlePlugin : Plugin() {
         registerMainAPI(YabanciDiziIzle())
         registerExtractorAPI(DzenRuExtractor())
         registerExtractorAPI(LuffytraExtractor())
+        registerExtractorAPI(MailRuExtractor())
     }
 }
 
@@ -224,6 +225,69 @@ class LuffytraExtractor : ExtractorApi() {
                         this.headers = mapOf("User-Agent" to StreamHelper.MOBILE_UA, "Referer" to url)
                     }
                 )
+            }
+        }
+    }
+}
+
+class MailRuExtractor : ExtractorApi() {
+    override val name = "MailRu"
+    override val mainUrl = "https://my.mail.ru"
+    override val requiresReferer = false
+
+    override suspend fun getUrl(
+        url: String,
+        referer: String?,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ) {
+        val id = Regex("""/embed/(\d+)""").find(url)?.groupValues?.getOrNull(1)
+            ?: Regex("""(\d{10,})""").find(url)?.value
+            ?: return
+        val embedUrl = "https://my.mail.ru/video/embed/$id"
+        val ua = StreamHelper.MOBILE_UA
+
+        val page = app.get(embedUrl, referer = referer ?: "https://yabancidiziizle.in/", headers = mapOf("User-Agent" to ua))
+        val html = StreamHelper.unescapeHtmlAndJson(page.text)
+
+        val metaFromPage = Regex(""""metadataUrl"\s*:\s*"([^"]+)"""").find(html)?.groupValues?.getOrNull(1)
+        val candidates = listOfNotNull(
+            metaFromPage?.let { if (it.startsWith("//")) "https:$it" else it },
+            "https://my.mail.ru/+/video/meta/$id"
+        ).distinct()
+
+        for (meta in candidates) {
+            try {
+                val res = app.get(
+                    meta,
+                    referer = embedUrl,
+                    headers = mapOf("User-Agent" to ua, "Accept" to "application/json"),
+                    cookies = page.cookies
+                )
+                val videoKey = res.cookies["video_key"] ?: page.cookies["video_key"]
+                val json = StreamHelper.unescapeHtmlAndJson(res.text)
+                val objRegex = Regex("""\{[^{}]*"url"\s*:\s*"[^"]+"[^{}]*\}""")
+                var found = 0
+                for (m in objRegex.findAll(json)) {
+                    val obj = m.value
+                    var v = Regex(""""url"\s*:\s*"([^"]+)"""").find(obj)?.groupValues?.getOrNull(1) ?: continue
+                    if (v.startsWith("//")) v = "https:$v"
+                    if (!v.startsWith("http")) continue
+                    val key = Regex(""""key"\s*:\s*"([^"]+)"""").find(obj)?.groupValues?.getOrNull(1).orEmpty()
+                    val q = Regex("""(\d{3,4})""").find(key)?.value?.toIntOrNull() ?: Qualities.Unknown.value
+                    val hdrs = mutableMapOf("User-Agent" to ua, "Referer" to embedUrl)
+                    if (!videoKey.isNullOrBlank()) hdrs["Cookie"] = "video_key=$videoKey"
+                    callback(
+                        newExtractorLink(name, "$name ${key.ifBlank { "" }}".trim(), v, ExtractorLinkType.VIDEO) {
+                            this.referer = embedUrl
+                            this.quality = q
+                            this.headers = hdrs
+                        }
+                    )
+                    found++
+                }
+                if (found > 0) return
+            } catch (_: Exception) {
             }
         }
     }
