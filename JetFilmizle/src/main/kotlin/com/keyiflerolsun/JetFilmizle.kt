@@ -1,14 +1,11 @@
 package com.keyiflerolsun
 
-import android.content.Context
 import android.util.Base64
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
 import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
 import com.lagradost.cloudstream3.mvvm.logError
-import com.lagradost.cloudstream3.plugins.CloudstreamPlugin
-import com.lagradost.cloudstream3.plugins.Plugin
 import com.lagradost.cloudstream3.utils.*
 import com.lagradost.cloudstream3.utils.AppUtils.toJson
 import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
@@ -19,15 +16,6 @@ import java.net.URI
 import java.net.URLEncoder
 import kotlin.coroutines.cancellation.CancellationException
 
-@CloudstreamPlugin
-class JetFilmizlePlugin : Plugin() {
-    override fun load(context: Context) {
-        registerMainAPI(JetFilmizle())
-        registerExtractorAPI(VideoParkExtractor())
-        registerExtractorAPI(VidRockExtractor())
-    }
-}
-
 class JetFilmizle : MainAPI() {
     override var mainUrl = "https://jetfilmizle.app"
     override var name = "JetFilmizle"
@@ -36,7 +24,7 @@ class JetFilmizle : MainAPI() {
     override val hasDownloadSupport = true
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
 
-    // 1_Ana_Sayfa_GET_ve_HTML.html ve E04_diziler.html içinde doğrulandı
+    // 1_Ana_Sayfa_GET_ve_HTML.html ve E04_diziler.html içinde doğrulandı[span_0](start_span)[span_0](end_span)[span_1](start_span)[span_1](end_span)
     override val mainPage = mainPageOf(
         "$mainUrl/filmler" to "Yeni Eklenen Filmler",
         "$mainUrl/nette-ilkler" to "Nette İlkler",
@@ -107,7 +95,7 @@ class JetFilmizle : MainAPI() {
         val encoded = URLEncoder.encode(query, "UTF-8")
         val results = mutableListOf<SearchResponse>()
 
-        // 1. Öncelik: E09_js_search.js içinde doğrulanan /arama-json?q=
+        // 1. Öncelik: E09_js_search.js içinde doğrulanan /arama-json?q=[span_2](start_span)[span_2](end_span)
         try {
             val jsonText = app.get(
                 "$mainUrl/arama-json?q=$encoded",
@@ -146,7 +134,6 @@ class JetFilmizle : MainAPI() {
 
         if (results.isNotEmpty()) return results
 
-        // 2. Yedek: HTML arama sayfası
         val doc = app.get("$mainUrl/arama?q=$encoded", referer = "$mainUrl/").document
         return doc.select("div.film-card.jf-card").mapNotNull { it.toSearchResult() }
     }
@@ -168,7 +155,7 @@ class JetFilmizle : MainAPI() {
         @JsonProperty("variants") val variants: List<SourceVariant> = emptyList()
     )
 
-    // E03_dizi_ham.html içinde doğrulanan JSON-LD dizi/sezon/bölüm modeli
+    // E03_dizi_ham.html içinde doğrulanan JSON-LD dizi/sezon/bölüm modeli[span_3](start_span)[span_3](end_span)
     data class JsonLdSeries(
         @JsonProperty("@type") val type: String? = null,
         @JsonProperty("containsSeason") val containsSeason: List<JsonLdSeason>? = null
@@ -210,7 +197,7 @@ class JetFilmizle : MainAPI() {
         val imdbId = doc.selectFirst("meta[name=film:imdb_id]")?.attr("content")?.trim()?.takeIf { it.isNotBlank() }
             ?: Regex("""imdb\.com/title/(tt\d+)""").find(doc.html())?.groupValues?.get(1)
 
-        // E03_dizi_ham.html içinde doğrulandı: <a href='https://www.themoviedb.org/tv/102621' class='rating-badge tmdb'>
+        // E03_dizi_ham.html içinde doğrulandı: <a href='https://www.themoviedb.org/tv/102621' class='rating-badge tmdb'>[span_4](start_span)[span_4](end_span)
         val tmdbId = Regex("""themoviedb\.org/(?:tv|movie)/(\d+)""").find(doc.html())?.groupValues?.get(1)
 
         val filmId = doc.selectFirst("input[name=film_id]")?.attr("value")?.trim().orEmpty()
@@ -230,7 +217,7 @@ class JetFilmizle : MainAPI() {
         val trailer = fixUrlNull(doc.selectFirst("#trailerIframe")?.attr("data-src"))
         val recommendations = doc.select(".similar-film-item div.film-card.jf-card").mapNotNull { it.toSearchResult() }
 
-        // Dizi kontrolü (E03_dizi_ham.html ve 4_Dizi_Detay_Sayfasi.html)
+        // Dizi kontrolü (E03_dizi_ham.html ve 4_Dizi_Detay_Sayfasi.html)[span_5](start_span)[span_5](end_span)[span_6](start_span)[span_6](end_span)
         val episodeButtons = doc.select(".episode-btn, button[data-episode], .player-source-btn[data-episode]")
         val sectionMeta = doc.selectFirst("meta[property=article:section]")?.attr("content").orEmpty()
         val isSeries = url.contains("/dizi/") || episodeButtons.isNotEmpty() || sectionMeta.equals("Diziler", ignoreCase = true)
@@ -238,7 +225,7 @@ class JetFilmizle : MainAPI() {
         if (isSeries) {
             val groupedEpisodes = LinkedHashMap<Pair<Int, Int>, MutableList<SourceVariant>>()
 
-            // 1. Yöntem: HTML içindeki .episode-btn butonlarını topla (dublaj, altyazili, genel)
+            // 1. Yöntem: HTML içindeki .episode-btn butonlarını topla (dublaj, altyazili, genel)[span_7](start_span)[span_7](end_span)[span_8](start_span)[span_8](end_span)
             for (btn in episodeButtons) {
                 val s = btn.attr("data-season").toIntOrNull()
                     ?: btn.closest(".episode-list")?.attr("data-season")?.toIntOrNull()
@@ -259,7 +246,7 @@ class JetFilmizle : MainAPI() {
                 }
             }
 
-            // 2. Yöntem (Yedek): Eğer HTML'de buton bulunamadıysa JSON-LD içindeki containsSeason dizisinden bölümleri çıkar
+            // 2. Yöntem (Yedek): HTML'de buton bulunamadıysa JSON-LD içindeki containsSeason dizisinden bölümleri çıkar[span_9](start_span)[span_9](end_span)[span_10](start_span)[span_10](end_span)
             if (groupedEpisodes.isEmpty()) {
                 val availableTypes = doc.select(".player-type-btn")
                     .mapNotNull { it.attr("data-player-type").takeIf { t -> t.isNotBlank() } }
@@ -383,7 +370,7 @@ class JetFilmizle : MainAPI() {
             )
         }
 
-        // 1. Adım: Her dil/kaynak varyantı için POST /jetplayer isteği gönder
+        // 1. Adım: Her dil/kaynak varyantı için POST /jetplayer isteği gönder[span_11](start_span)[span_11](end_span)
         for (variant in variantsToTry) {
             try {
                 if (linkData.filmId.isNotBlank()) {
@@ -392,7 +379,6 @@ class JetFilmizle : MainAPI() {
                         "source_index" to variant.sourceIndex,
                         "player_type" to variant.playerType
                     )
-                    // Dizi ise season ve episode bilgilerini de gönder (sunucu tarafı uyumluluğu için)
                     if (linkData.isSeries) {
                         linkData.season?.let { postMap["season"] = it.toString() }
                         linkData.episode?.let { postMap["episode"] = it.toString() }
@@ -428,7 +414,7 @@ class JetFilmizle : MainAPI() {
             }
         }
 
-        // 2. Adım: Dizi veya Filmde /jetplayer sonuç vermediyse (veya ek kaynak olarak) doğrudan VideoPark / JetEmbed çöz
+        // 2. Adım: Dizi veya Filmde ek/yedek olarak doğrudan VideoPark / JetEmbed çöz[span_12](start_span)[span_12](end_span)[span_13](start_span)[span_13](end_span)[span_14](start_span)[span_14](end_span)
         if (!linkData.imdbId.isNullOrBlank()) {
             val querySuffix = buildString {
                 val params = mutableListOf<String>()
@@ -505,14 +491,13 @@ class JetFilmizle : MainAPI() {
         var found = false
         val frag: Document = Jsoup.parseBodyFragment(html, mainUrl)
 
-        // 1) Doğrudan <video> veya <source> varsa
         for (srcEl in frag.select("video[src], video source[src]")) {
             val videoUrl = fixUrlNull(srcEl.attr("src")) ?: continue
             emitDirectLink(name, videoUrl, referer, variant.label, callback)
             found = true
         }
 
-        // 2) Sahte YouTube reklam iframe'i (#yt-frame) ve fragman (#trailerIframe) hariç tüm iframe'leri al
+        // Sahte YouTube reklam iframe'i (#yt-frame) ve fragman (#trailerIframe) hariç tutulur[span_15](start_span)[span_15](end_span)[span_16](start_span)[span_16](end_span)
         val iframeUrls = frag.select("iframe[src], iframe[data-src]")
             .filterNot { it.id() == "yt-frame" || it.id() == "trailerIframe" }
             .mapNotNull { fixUrlNull(it.attr("src").ifBlank { it.attr("data-src") }) }
@@ -554,8 +539,7 @@ class JetFilmizle : MainAPI() {
 }
 
 /**
- * VideoParkExtractor (https://videopark.top/jetembed/...)
- * Hem doğrudan ExtractorApi olarak (loadExtractor üzerinden) hem de dizi sezon/bölüm bağlamıyla çalışır.
+ * VideoParkExtractor (https://videopark.top/jetembed/...)[span_17](start_span)[span_17](end_span)[span_18](start_span)[span_18](end_span)[span_19](start_span)[span_19](end_span)
  */
 open class VideoParkExtractor : ExtractorApi() {
     override val name = "VideoPark"
@@ -617,8 +601,7 @@ open class VideoParkExtractor : ExtractorApi() {
             ""
         }
 
-        // E10_embed0_orijinal.html'de doğrulandı: player.init('tt32741341', 'movie', null, null);
-        // Dizilerde: player.init('tt8550732', 'tv', 1, 1);
+        // E10_embed0_orijinal.html'de doğrulandı: player.init('tt32741341', 'movie', null, null);[span_20](start_span)[span_20](end_span)[span_21](start_span)[span_21](end_span)[span_22](start_span)[span_22](end_span)
         val initRegex = Regex(
             """player\.init\(\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]\s*,\s*([^,)]+)\s*,\s*([^)]+)\)"""
         )
@@ -648,8 +631,7 @@ open class VideoParkExtractor : ExtractorApi() {
         val origin = if (uri.scheme != null && uri.host != null) "${uri.scheme}://${uri.host}" else mainUrl
         val dilParam = Regex("""[?&]dil=([^&#]+)""").find(url)?.groupValues?.get(1)
 
-        // 2_Arama_HAR_Kaydi.json'da doğrulanan gerçek endpoint:
-        // GET /jetembed/backend/api_sources.php?imdb=tt...
+        // 2_Arama_HAR_Kaydi.json'da doğrulanan gerçek endpoint[span_23](start_span)[span_23](end_span)[span_24](start_span)[span_24](end_span)
         val queryParams = mutableListOf("imdb=${URLEncoder.encode(imdbId, "UTF-8")}")
         if (mediaType == "tv") {
             queryParams.add("type=tv")
@@ -681,7 +663,6 @@ open class VideoParkExtractor : ExtractorApi() {
 
         for (src in sources) {
             val rawTargetUrl = src.url?.trim()?.takeIf { it.isNotBlank() } ?: continue
-            // Eğer dizi ise ve api_sources.php yanlışlıkla /movie/ döndürdüyse URL'yi dizi formatına düzelt
             val targetUrl = if (mediaType == "tv" && seasonArg != null && episodeArg != null) {
                 adaptEmbedUrlForSeries(rawTargetUrl, imdbId, tmdbOverride, seasonArg, episodeArg)
             } else {
@@ -711,10 +692,6 @@ open class VideoParkExtractor : ExtractorApi() {
         return found
     }
 
-    /**
-     * 6_Embed_JWPlayer_Sayfasi.html içindeki 12 sağlayıcının (vidfast, airflix1, moviesapi, vidking,
-     * xpass, vidrock, videasy, vidlink, primesrc, embedmaster, peachify, ythd) dizi (TV) URL şablonu uyarlaması.
-     */
     private fun adaptEmbedUrlForSeries(
         rawUrl: String,
         imdbId: String,
@@ -722,7 +699,6 @@ open class VideoParkExtractor : ExtractorApi() {
         season: String,
         episode: String
     ): String {
-        // Zaten sezon/bölüm içeriyorsa dokunma
         if (rawUrl.contains("/tv/") || rawUrl.contains("/series/") || rawUrl.contains("season=")) {
             return rawUrl
         }
@@ -760,7 +736,6 @@ open class VideoParkExtractor : ExtractorApi() {
         val body = resp.text
         var found = parseLinksFromRawText(body, embedUrl, label, subtitleCallback, callback)
 
-        // Packed JS (eval(function(p,a,c,k,e,d))) varsa çözüp içindeki m3u8 adreslerini çıkar
         val unpacked = getAndUnpack(body)
         if (unpacked.isNotBlank() && unpacked != body) {
             if (parseLinksFromRawText(unpacked, embedUrl, label, subtitleCallback, callback)) {
@@ -768,7 +743,6 @@ open class VideoParkExtractor : ExtractorApi() {
             }
         }
 
-        // FirePlayer / Luffytra / PHP Player (do=getVideo) kontrolü
         val fireHash = Regex("""FirePlayer\s*\(\s*["']([a-f0-9]{16,})["']""", RegexOption.IGNORE_CASE)
             .find(body)?.groupValues?.get(1)
             ?: Regex("""/player/index\.php\?data=([a-f0-9]{16,})""", RegexOption.IGNORE_CASE)
@@ -798,8 +772,9 @@ open class VideoParkExtractor : ExtractorApi() {
             }
         }
 
+        // DÜZELTME: ExtractorApi içinde MainAPI.fixUrlNull yerine bağımsız resolveUrlNull kullanıldı
         val nestedIframes = resp.document.select("iframe[src], iframe[data-src]")
-            .mapNotNull { fixUrlNull(it.attr("src").ifBlank { it.attr("data-src") }) }
+            .mapNotNull { resolveUrlNull(embedUrl, it.attr("src").ifBlank { it.attr("data-src") }) }
             .filterNot { it.contains("youtube.com") || it == embedUrl }
             .distinct()
 
@@ -829,7 +804,7 @@ open class VideoParkExtractor : ExtractorApi() {
 
         val subRegex = Regex("""https?://[^\s"'<>\\]+?\.(?:vtt|srt)(?:\?[^\s"'<>\\]*)?""", RegexOption.IGNORE_CASE)
         for (subMatch in subRegex.findAll(unescaped)) {
-            subtitleCallback(SubtitleFile("Türkçe", subMatch.value))
+            subtitleCallback(newSubtitleFile("Türkçe", subMatch.value))
         }
 
         val streamRegex = Regex(
@@ -843,12 +818,11 @@ open class VideoParkExtractor : ExtractorApi() {
             found = true
         }
 
-        // JSON içinde "securedLink" veya "videoSource" varsa yakala
         val fieldRegex = Regex("""["'](?:file|videoSource|securedLink)["']\s*:\s*["'](https?://[^"']+)["']""")
         for (m in fieldRegex.findAll(unescaped)) {
             val link = m.groupValues[1]
             if (link.endsWith(".vtt", true) || link.endsWith(".srt", true)) {
-                subtitleCallback(SubtitleFile("Türkçe", link))
+                subtitleCallback(newSubtitleFile("Türkçe", link))
             } else if (!link.endsWith(".js", true) && !link.endsWith(".png", true)) {
                 emitDirectLink(name, link, referer, label, callback)
                 found = true
@@ -860,8 +834,7 @@ open class VideoParkExtractor : ExtractorApi() {
 }
 
 /**
- * VidRockExtractor (https://vidrock.net/movie/... ve https://vidrock.net/tv/...)
- * 2_Arama_HAR_Kaydi.json içinde doğrulandı: GET https://vidrock.net/api/movie/{id} veya /api/tv/{id}/{s}/{e}
+ * VidRockExtractor (https://vidrock.net/movie/... ve https://vidrock.net/tv/...)[span_25](start_span)[span_25](end_span)[span_26](start_span)[span_26](end_span)
  */
 open class VidRockExtractor : ExtractorApi() {
     override val name = "VidRock"
@@ -892,7 +865,6 @@ open class VidRockExtractor : ExtractorApi() {
             found = true
         }
 
-        // Sayfa içinde TMDB ID varsa onu bul, yoksa URL'deki ID'yi kullan
         val tmdbMatch = Regex("""["']?(?:tmdb|tmdbId|id)["']?\s*[:=]\s*["']?(\d{3,})["']?""").find(pageHtml)?.groupValues?.get(1)
         val tvMatch = Regex("""/tv/([^/?#]+)/(\d+)/(\d+)""").find(url)
         val movieMatch = Regex("""/movie/([^/?#]+)""").find(url)
@@ -923,7 +895,6 @@ open class VidRockExtractor : ExtractorApi() {
                     found = true
                 }
 
-                // Base64 / Base64Url kodlu URL alanlarını kontrol et
                 val urlFieldRegex = Regex("""["']url["']\s*:\s*["']([^"']{16,})["']""")
                 for (m in urlFieldRegex.findAll(apiText)) {
                     val rawVal = m.groupValues[1]
@@ -955,6 +926,23 @@ open class VidRockExtractor : ExtractorApi() {
         } catch (e: Exception) {
             null
         }
+    }
+}
+
+/**
+ * MainAPI dışındaki sınıflarda (ExtractorApi vb.) güvenle kullanılabilen bağımsız URL çözümleyici.
+ */
+private fun resolveUrlNull(baseUrl: String, url: String?): String? {
+    val clean = url?.trim()?.takeIf { it.isNotBlank() && !it.startsWith("javascript:") && !it.startsWith("data:") }
+        ?: return null
+    return try {
+        when {
+            clean.startsWith("http://") || clean.startsWith("https://") -> clean
+            clean.startsWith("//") -> "https:$clean"
+            else -> URI(baseUrl).resolve(clean).toString()
+        }
+    } catch (e: Exception) {
+        null
     }
 }
 
