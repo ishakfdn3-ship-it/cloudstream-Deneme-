@@ -9,9 +9,6 @@ import com.lagradost.cloudstream3.mvvm.logError
 import com.lagradost.cloudstream3.utils.*
 import com.lagradost.cloudstream3.utils.AppUtils.toJson
 import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
@@ -19,13 +16,6 @@ import java.net.URI
 import java.net.URLEncoder
 import java.util.UUID
 import kotlin.coroutines.cancellation.CancellationException
-
-/**
- * CloudStream SDK bağımsız, güvenli paralel çalıştırma (Coroutine) fonksiyonu
- */
-private suspend fun <A, B> Iterable<A>.parallelMap(f: suspend (A) -> B): List<B> = coroutineScope {
-    map { item -> async { f(item) } }.awaitAll()
-}
 
 class JetFilmizle : MainAPI() {
     override var mainUrl = "https://jetfilmizle.app"
@@ -423,10 +413,10 @@ class JetFilmizle : MainAPI() {
             )
         }
 
-        val processedEmbedUrls = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+        val processedEmbedUrls = mutableSetOf<String>()
 
-        // 1. ADIM: Tüm varyantlara PARALEL olarak (parallelMap) POST /jetplayer isteği at
-        variantsToTry.parallelMap { variant: SourceVariant ->
+        // 1. ADIM: Her varyant için POST /jetplayer isteği at
+        for (variant in variantsToTry) {
             if (linkData.filmId.isNotBlank()) {
                 try {
                     val postMap = mapOf(
@@ -515,45 +505,45 @@ class JetFilmizle : MainAPI() {
             .filterNot { it.contains("youtube.com/embed/") || it.contains("youtu.be/") }
             .distinct()
 
-        iframeUrls.parallelMap { iframeUrl: String ->
-            if (processedEmbedUrls.add(iframeUrl)) {
-                try {
-                    when {
-                        iframeUrl.contains("/jetembed/") || iframeUrl.contains("videopark.") -> {
-                            VideoParkExtractor().extractWithContext(
-                                url = iframeUrl,
-                                referer = referer,
-                                labelPrefix = variant.label,
-                                imdbOverride = linkData.imdbId,
-                                tmdbOverride = linkData.tmdbId,
-                                isSeries = linkData.isSeries,
-                                seasonOverride = linkData.season,
-                                episodeOverride = linkData.episode,
-                                subtitleCallback = subtitleCallback,
-                                callback = callback
-                            )
-                        }
-                        iframeUrl.contains("embedmaster") || iframeUrl.contains("embdmstrplayer") -> {
-                            EmbedMasterExtractor().extractEmbedMaster(iframeUrl, referer, variant.label, subtitleCallback, callback)
-                        }
-                        else -> {
-                            if (!loadExtractor(iframeUrl, referer, subtitleCallback, callback)) {
-                                VideoParkExtractor().scrapeGenericEmbedPage(iframeUrl, referer, variant.label, subtitleCallback, callback)
-                            }
+        for (iframeUrl in iframeUrls) {
+            if (!processedEmbedUrls.add(iframeUrl)) continue
+
+            try {
+                when {
+                    iframeUrl.contains("/jetembed/") || iframeUrl.contains("videopark.") -> {
+                        VideoParkExtractor().extractWithContext(
+                            url = iframeUrl,
+                            referer = referer,
+                            labelPrefix = variant.label,
+                            imdbOverride = linkData.imdbId,
+                            tmdbOverride = linkData.tmdbId,
+                            isSeries = linkData.isSeries,
+                            seasonOverride = linkData.season,
+                            episodeOverride = linkData.episode,
+                            subtitleCallback = subtitleCallback,
+                            callback = callback
+                        )
+                    }
+                    iframeUrl.contains("embedmaster") || iframeUrl.contains("embdmstrplayer") -> {
+                        EmbedMasterExtractor().extractEmbedMaster(iframeUrl, referer, variant.label, subtitleCallback, callback)
+                    }
+                    else -> {
+                        if (!loadExtractor(iframeUrl, referer, subtitleCallback, callback)) {
+                            VideoParkExtractor().scrapeGenericEmbedPage(iframeUrl, referer, variant.label, subtitleCallback, callback)
                         }
                     }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    logError(e)
                 }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logError(e)
             }
         }
     }
 }
 
 /**
- * VideoParkExtractor - Paralel (parallelMap) ve Dizi/Film Tam Uyumlu
+ * VideoParkExtractor - Dizi/Film Tam Uyumlu ve Hızlı
  */
 open class VideoParkExtractor : ExtractorApi() {
     override val name = "VideoPark"
@@ -669,46 +659,54 @@ open class VideoParkExtractor : ExtractorApi() {
         val parsed = tryParseJson<JetEmbedApiResponse>(apiJsonText)
         val allSources = parsed?.sources?.sortedByDescending { it.priorityScore ?: 0 }.orEmpty()
 
-        val priorityNames = listOf("embedmaster", "vidrock", "vidfast", "peachify", "vidlink", "videasy", "moviesapi")
-        val filteredSources = allSources.filter { src ->
+        // Sadece hızlı ve doğrudan sonuç veren ana kaynakları seç (12 kaynağı birden beklemeyi önler)
+        val fastSources = allSources.filter { src ->
             val n = src.name?.lowercase().orEmpty()
             val u = src.url?.lowercase().orEmpty()
-            priorityNames.any { n.contains(it) || u.contains(it) }
-        }.ifEmpty { allSources.take(5) }
+            n.contains("embedmaster") || u.contains("embedmaster") ||
+                n.contains("vidrock") || u.contains("vidrock") ||
+                n.contains("peachify") || u.contains("peachify") ||
+                n.contains("vidfast") || u.contains("vidfast")
+        }.ifEmpty { allSources.take(3) }
 
-        filteredSources.parallelMap { src: JetEmbedSource ->
-            val rawTargetUrl = src.url?.trim()?.takeIf { it.isNotBlank() }
-            if (rawTargetUrl != null) {
-                val targetUrl = if (mediaType == "tv" && seasonArg != null && episodeArg != null) {
-                    adaptEmbedUrlForSeries(rawTargetUrl, resolvedImdbId, tmdbOverride, seasonArg, episodeArg)
-                } else {
-                    rawTargetUrl
-                }
+        var found = false
+        for (src in fastSources) {
+            val rawTargetUrl = src.url?.trim()?.takeIf { it.isNotBlank() } ?: continue
+            val targetUrl = if (mediaType == "tv" && seasonArg != null && episodeArg != null) {
+                adaptEmbedUrlForSeries(rawTargetUrl, resolvedImdbId, tmdbOverride, seasonArg, episodeArg)
+            } else {
+                rawTargetUrl
+            }
 
-                val sourceLabel = "$labelPrefix [${src.name ?: "Kaynak"}]"
-                try {
-                    when {
-                        targetUrl.contains("embedmaster") || targetUrl.contains("embdmstrplayer") -> {
-                            EmbedMasterExtractor().extractEmbedMaster(targetUrl, url, sourceLabel, subtitleCallback, callback)
-                        }
-                        targetUrl.contains("vidrock.net") -> {
-                            VidRockExtractor().extractVidRock(targetUrl, url, sourceLabel, subtitleCallback, callback)
-                        }
-                        else -> {
-                            if (!loadExtractor(targetUrl, url, subtitleCallback, callback)) {
-                                scrapeGenericEmbedPage(targetUrl, url, sourceLabel, subtitleCallback, callback)
-                            }
+            val sourceLabel = "$labelPrefix [${src.name ?: "Kaynak"}]"
+            try {
+                when {
+                    targetUrl.contains("embedmaster") || targetUrl.contains("embdmstrplayer") -> {
+                        if (EmbedMasterExtractor().extractEmbedMaster(targetUrl, url, sourceLabel, subtitleCallback, callback)) {
+                            found = true
                         }
                     }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    logError(e)
+                    targetUrl.contains("vidrock.net") -> {
+                        if (VidRockExtractor().extractVidRock(targetUrl, url, sourceLabel, subtitleCallback, callback)) {
+                            found = true
+                        }
+                    }
+                    else -> {
+                        if (loadExtractor(targetUrl, url, subtitleCallback, callback)) {
+                            found = true
+                        } else if (scrapeGenericEmbedPage(targetUrl, url, sourceLabel, subtitleCallback, callback)) {
+                            found = true
+                        }
+                    }
                 }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logError(e)
             }
         }
 
-        return true
+        return found
     }
 
     private fun adaptEmbedUrlForSeries(
@@ -856,7 +854,6 @@ open class EmbedMasterExtractor : ExtractorApi() {
         var resp = app.get(currentUrl, referer = referer)
         var body = resp.text
 
-        // jspecify Nullable hatasını önlemek için Element? tipi açıkça belirtildi
         val doc: Document = resp.document
         val iframeEl: Element? = doc.selectFirst("iframe[src], iframe[data-src]")
         val rawSrc = if (iframeEl != null) {
