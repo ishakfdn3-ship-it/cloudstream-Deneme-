@@ -1,4 +1,4 @@
-herepackage com.kullanici.jetfilmizle
+package com.kullanici.jetfilmizle
 
 import android.content.Context
 import com.lagradost.cloudstream3.plugins.CloudstreamPlugin
