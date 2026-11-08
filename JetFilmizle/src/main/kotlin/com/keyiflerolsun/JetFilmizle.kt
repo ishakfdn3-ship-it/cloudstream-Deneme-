@@ -9,6 +9,9 @@ import com.lagradost.cloudstream3.mvvm.logError
 import com.lagradost.cloudstream3.utils.*
 import com.lagradost.cloudstream3.utils.AppUtils.toJson
 import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
@@ -16,6 +19,13 @@ import java.net.URI
 import java.net.URLEncoder
 import java.util.UUID
 import kotlin.coroutines.cancellation.CancellationException
+
+/**
+ * CloudStream SDK bağımsız, güvenli paralel çalıştırma (Coroutine) fonksiyonu
+ */
+private suspend fun <A, B> Iterable<A>.parallelMap(f: suspend (A) -> B): List<B> = coroutineScope {
+    map { item -> async { f(item) } }.awaitAll()
+}
 
 class JetFilmizle : MainAPI() {
     override var mainUrl = "https://jetfilmizle.app"
@@ -52,30 +62,35 @@ class JetFilmizle : MainAPI() {
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val url = if (page <= 1) request.data else "${request.data}/sayfa-$page"
-        val doc = app.get(url, headers = getBaseHeaders()).document
+        val doc: Document = app.get(url, headers = getBaseHeaders()).document
 
         val items = doc.select("div.film-card.jf-card, div.film-card").mapNotNull { it.toSearchResult() }.distinctBy { it.url }
-        val hasNext = doc.selectFirst(".pagination-modern .next-page a[href], .pagination-modern a[rel=next]") != null
+        val nextEl: Element? = doc.selectFirst(".pagination-modern .next-page a[href], .pagination-modern a[rel=next]")
+        val hasNext = nextEl != null
 
         return newHomePageResponse(request.name, items, hasNext)
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
-        val linkEl = selectFirst("a[href]") ?: return null
+        val linkEl: Element = selectFirst("a[href]") ?: return null
         val href = fixUrlNull(linkEl.attr("href")) ?: return null
-        val title = selectFirst("h3.fc-title, .search-result-title")?.text()?.trim()?.takeIf { it.isNotBlank() } ?: return null
+        val titleEl: Element? = selectFirst("h3.fc-title, .search-result-title")
+        val title = titleEl?.text()?.trim()?.takeIf { it.isNotBlank() } ?: return null
 
-        val img = selectFirst(".film-poster img, img.card-img-top, img")
+        val img: Element? = selectFirst(".film-poster img, img.card-img-top, img")
         val poster = fixUrlNull(
             listOf("data-src", "src")
                 .map { img?.attr(it).orEmpty() }
                 .firstOrNull { it.isNotBlank() && !it.startsWith("data:") }
         )
 
-        val year = selectFirst(".fc-year")?.text()?.trim()?.toIntOrNull()
-        val scoreText = selectFirst(".fc-rating--imdb")?.text()?.trim()
+        val yearEl: Element? = selectFirst(".fc-year")
+        val year = yearEl?.text()?.trim()?.toIntOrNull()
+        val scoreEl: Element? = selectFirst(".fc-rating--imdb")
+        val scoreText = scoreEl?.text()?.trim()
 
-        val isSeries = href.contains("/dizi/") || selectFirst(".fc-chip--dizi") != null
+        val diziChip: Element? = selectFirst(".fc-chip--dizi")
+        val isSeries = href.contains("/dizi/") || diziChip != null
         return if (isSeries) {
             newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
                 this.posterUrl = poster
@@ -147,7 +162,7 @@ class JetFilmizle : MainAPI() {
 
         if (results.isNotEmpty()) return results
 
-        val doc = app.get("$mainUrl/arama?q=$encoded", headers = getBaseHeaders()).document
+        val doc: Document = app.get("$mainUrl/arama?q=$encoded", headers = getBaseHeaders()).document
         return doc.select("div.film-card.jf-card, div.film-card").mapNotNull { it.toSearchResult() }
     }
 
@@ -184,35 +199,48 @@ class JetFilmizle : MainAPI() {
     )
 
     override suspend fun load(url: String): LoadResponse? {
-        val doc = app.get(url, headers = getBaseHeaders()).document
+        val doc: Document = app.get(url, headers = getBaseHeaders()).document
 
-        val title = doc.selectFirst("h1.film-title")?.text()?.trim()?.takeIf { it.isNotBlank() }
-            ?: doc.selectFirst("meta[name=film:title]")?.attr("content")?.trim()?.takeIf { it.isNotBlank() }
+        val h1El: Element? = doc.selectFirst("h1.film-title")
+        val metaTitleEl: Element? = doc.selectFirst("meta[name=film:title]")
+        val title = h1El?.text()?.trim()?.takeIf { it.isNotBlank() }
+            ?: metaTitleEl?.attr("content")?.trim()?.takeIf { it.isNotBlank() }
             ?: return null
 
-        val poster = fixUrlNull(
-            doc.selectFirst(".film-hero-card img.film-poster")?.attr("src")
-                ?.ifBlank { doc.selectFirst("meta[property=og:image]")?.attr("content").orEmpty() }
-        )
-        val backgroundPoster = fixUrlNull(doc.selectFirst("meta[property=og:image]")?.attr("content")) ?: poster
+        val posterImgEl: Element? = doc.selectFirst(".film-hero-card img.film-poster")
+        val ogImageEl: Element? = doc.selectFirst("meta[property=og:image]")
+        val rawPoster = posterImgEl?.attr("src")?.takeIf { it.isNotBlank() }
+            ?: ogImageEl?.attr("content").orEmpty()
+        val poster = fixUrlNull(rawPoster)
+        val backgroundPoster = fixUrlNull(ogImageEl?.attr("content")) ?: poster
 
-        val plot = doc.selectFirst(".film-description .description-text")?.text()?.trim()
-            ?.ifBlank { doc.selectFirst("meta[property=og:description]")?.attr("content")?.trim().orEmpty() }
+        val descEl: Element? = doc.selectFirst(".film-description .description-text")
+        val ogDescEl: Element? = doc.selectFirst("meta[property=og:description]")
+        val plot = descEl?.text()?.trim()?.takeIf { it.isNotBlank() }
+            ?: ogDescEl?.attr("content")?.trim().orEmpty()
 
-        val year = doc.selectFirst("meta[name=film:year]")?.attr("content")?.toIntOrNull()
-            ?: doc.selectFirst("meta[property=video:release_date]")?.attr("content")?.toIntOrNull()
+        val metaYearEl: Element? = doc.selectFirst("meta[name=film:year]")
+        val releaseYearEl: Element? = doc.selectFirst("meta[property=video:release_date]")
+        val year = metaYearEl?.attr("content")?.toIntOrNull()
+            ?: releaseYearEl?.attr("content")?.toIntOrNull()
 
-        val duration = doc.selectFirst("meta[name=film:duration]")?.attr("content")?.toIntOrNull()
-        val rating = doc.selectFirst("meta[name=film:rating]")?.attr("content")
-            ?: doc.selectFirst(".rating-badge.imdb b")?.text()
+        val durationEl: Element? = doc.selectFirst("meta[name=film:duration]")
+        val duration = durationEl?.attr("content")?.toIntOrNull()
 
-        val imdbId = doc.selectFirst("meta[name=film:imdb_id]")?.attr("content")?.trim()?.takeIf { it.isNotBlank() }
+        val ratingMetaEl: Element? = doc.selectFirst("meta[name=film:rating]")
+        val ratingBadgeEl: Element? = doc.selectFirst(".rating-badge.imdb b")
+        val rating = ratingMetaEl?.attr("content") ?: ratingBadgeEl?.text()
+
+        val imdbMetaEl: Element? = doc.selectFirst("meta[name=film:imdb_id]")
+        val imdbId = imdbMetaEl?.attr("content")?.trim()?.takeIf { it.isNotBlank() }
             ?: Regex("""imdb\.com/title/(tt\d+)""").find(doc.html())?.groupValues?.get(1)
 
         val tmdbId = Regex("""themoviedb\.org/(?:tv|movie)/(\d+)""").find(doc.html())?.groupValues?.get(1)
 
-        val filmId = doc.selectFirst("input[name=film_id]")?.attr("value")?.trim()
-            ?: doc.selectFirst("[data-film-id]")?.attr("data-film-id")?.trim().orEmpty()
+        val filmIdInputEl: Element? = doc.selectFirst("input[name=film_id]")
+        val dataFilmIdEl: Element? = doc.selectFirst("[data-film-id]")
+        val filmId = filmIdInputEl?.attr("value")?.trim()
+            ?: dataFilmIdEl?.attr("data-film-id")?.trim().orEmpty()
 
         val tags = doc.select(".categories-container-details a.category-badge-details")
             .map { it.text().trim() }
@@ -220,33 +248,40 @@ class JetFilmizle : MainAPI() {
             .ifEmpty { doc.select("meta[property=video:tag]").mapNotNull { it.attr("content").takeIf { c -> c.isNotBlank() } } }
 
         val actors = doc.select(".actors-grid .cast-card").mapNotNull { card ->
-            val actorName = card.selectFirst(".cast-info a")?.text()?.trim()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-            val avatar = fixUrlNull(card.selectFirst(".cast-avatar img")?.attr("src"))
-            val role = card.selectFirst(".karakter-badge")?.text()?.trim()?.takeIf { it.isNotBlank() }
+            val nameEl: Element = card.selectFirst(".cast-info a") ?: return@mapNotNull null
+            val actorName = nameEl.text().trim().takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val avatarEl: Element? = card.selectFirst(".cast-avatar img")
+            val avatar = fixUrlNull(avatarEl?.attr("src"))
+            val roleEl: Element? = card.selectFirst(".karakter-badge")
+            val role = roleEl?.text()?.trim()?.takeIf { it.isNotBlank() }
             Actor(actorName, avatar) to role
         }
 
-        val trailer = fixUrlNull(doc.selectFirst("#trailerIframe")?.attr("data-src"))
+        val trailerEl: Element? = doc.selectFirst("#trailerIframe")
+        val trailer = fixUrlNull(trailerEl?.attr("data-src"))
         val recommendations = doc.select(".similar-film-item div.film-card").mapNotNull { it.toSearchResult() }
 
         val episodeButtons = doc.select(".episode-btn, button[data-episode], .player-source-btn[data-episode]")
-        val sectionMeta = doc.selectFirst("meta[property=article:section]")?.attr("content").orEmpty()
+        val sectionMetaEl: Element? = doc.selectFirst("meta[property=article:section]")
+        val sectionMeta = sectionMetaEl?.attr("content").orEmpty()
         val isSeries = url.contains("/dizi/") || episodeButtons.isNotEmpty() || sectionMeta.equals("Diziler", ignoreCase = true)
 
         if (isSeries) {
             val groupedEpisodes = LinkedHashMap<Pair<Int, Int>, MutableList<SourceVariant>>()
 
             for (btn in episodeButtons) {
+                val parentListEl: Element? = btn.closest(".episode-list")
                 val s = btn.attr("data-season").toIntOrNull()
-                    ?: btn.closest(".episode-list")?.attr("data-season")?.toIntOrNull()
+                    ?: parentListEl?.attr("data-season")?.toIntOrNull()
                     ?: 1
                 val e = btn.attr("data-episode").toIntOrNull()
                     ?: Regex("""[Bb]ölüm\s*(\d+)|[Ee](\d+)|(\d+)""").find(btn.text())?.groupValues?.drop(1)?.firstOrNull { it.isNotEmpty() }?.toIntOrNull()
                     ?: continue
 
                 val srcIdx = btn.attr("data-source-index").ifBlank { "0" }
+                val parentGroupEl: Element? = btn.closest(".player-sources-group")
                 val pType = btn.attr("data-player-type")
-                    .ifBlank { btn.closest(".player-sources-group")?.attr("data-player-group").orEmpty() }
+                    .ifBlank { parentGroupEl?.attr("data-player-group").orEmpty() }
                     .ifBlank { "genel" }
 
                 val key = s to e
@@ -282,7 +317,6 @@ class JetFilmizle : MainAPI() {
                 }
             }
 
-            // Eğer hala boşsa en azından 1. Sezon 1. Bölümü oluştur ki dizi sayfası boş kalmasın
             if (groupedEpisodes.isEmpty()) {
                 groupedEpisodes[1 to 1] = mutableListOf(
                     SourceVariant("0", "dublaj", "Türkçe Dublaj"),
@@ -328,8 +362,9 @@ class JetFilmizle : MainAPI() {
         } else {
             val variants = doc.select(".player-source-btn:not(.episode-btn)").mapNotNull { btn ->
                 val srcIdx = btn.attr("data-source-index").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                val parentGroupEl: Element? = btn.closest(".player-sources-group")
                 val pType = btn.attr("data-player-type")
-                    .ifBlank { btn.closest(".player-sources-group")?.attr("data-player-group").orEmpty() }
+                    .ifBlank { parentGroupEl?.attr("data-player-group").orEmpty() }
                     .ifBlank { "genel" }
                 val btnName = btn.text().trim().ifBlank { "Kaynak ${srcIdx.toIntOrNull()?.plus(1) ?: 1}" }
                 SourceVariant(srcIdx, pType, "${playerTypeDisplayName(pType, "")} - $btnName".trim(' ', '-'))
@@ -388,14 +423,12 @@ class JetFilmizle : MainAPI() {
             )
         }
 
-        // VideoPark URL'lerinin aynı loadLinks çağrısında mükerrer taranmasını önleyen küme
         val processedEmbedUrls = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
-        // 1. ADIM: Tüm varyantlara PARALEL olarak (argamap) POST /jetplayer isteği at (Hız 10x artar)
-        variantsToTry.argamap { variant ->
+        // 1. ADIM: Tüm varyantlara PARALEL olarak (parallelMap) POST /jetplayer isteği at
+        variantsToTry.parallelMap { variant: SourceVariant ->
             if (linkData.filmId.isNotBlank()) {
                 try {
-                    // E09_js_film-page.min_2.js'deki birebir POST gövdesi
                     val postMap = mapOf(
                         "film_id" to linkData.filmId,
                         "source_index" to variant.sourceIndex,
@@ -430,7 +463,7 @@ class JetFilmizle : MainAPI() {
             }
         }
 
-        // 2. ADIM: Eğer 1. Adımda hiçbir VideoPark/JetEmbed iframe'i gelmediyse (veya ban mesajı döndüyse) doğrudan IMDb ID ile çöz
+        // 2. ADIM: Eğer 1. Adımda hiçbir VideoPark/JetEmbed iframe'i gelmediyse doğrudan IMDb ID ile çöz
         if (!linkData.imdbId.isNullOrBlank() && processedEmbedUrls.none { it.contains("videopark") || it.contains("jetembed") }) {
             val directJetEmbedUrl = if (linkData.isSeries) {
                 "https://videopark.top/jetembed/${linkData.imdbId}?type=tv&season=${linkData.season ?: 1}&episode=${linkData.episode ?: 1}"
@@ -482,45 +515,45 @@ class JetFilmizle : MainAPI() {
             .filterNot { it.contains("youtube.com/embed/") || it.contains("youtu.be/") }
             .distinct()
 
-        iframeUrls.argamap { iframeUrl ->
-            if (!processedEmbedUrls.add(iframeUrl)) return@argamap
-
-            try {
-                when {
-                    iframeUrl.contains("/jetembed/") || iframeUrl.contains("videopark.") -> {
-                        VideoParkExtractor().extractWithContext(
-                            url = iframeUrl,
-                            referer = referer,
-                            labelPrefix = variant.label,
-                            imdbOverride = linkData.imdbId,
-                            tmdbOverride = linkData.tmdbId,
-                            isSeries = linkData.isSeries,
-                            seasonOverride = linkData.season,
-                            episodeOverride = linkData.episode,
-                            subtitleCallback = subtitleCallback,
-                            callback = callback
-                        )
-                    }
-                    iframeUrl.contains("embedmaster") || iframeUrl.contains("embdmstrplayer") -> {
-                        EmbedMasterExtractor().extractEmbedMaster(iframeUrl, referer, variant.label, subtitleCallback, callback)
-                    }
-                    else -> {
-                        if (!loadExtractor(iframeUrl, referer, subtitleCallback, callback)) {
-                            VideoParkExtractor().scrapeGenericEmbedPage(iframeUrl, referer, variant.label, subtitleCallback, callback)
+        iframeUrls.parallelMap { iframeUrl: String ->
+            if (processedEmbedUrls.add(iframeUrl)) {
+                try {
+                    when {
+                        iframeUrl.contains("/jetembed/") || iframeUrl.contains("videopark.") -> {
+                            VideoParkExtractor().extractWithContext(
+                                url = iframeUrl,
+                                referer = referer,
+                                labelPrefix = variant.label,
+                                imdbOverride = linkData.imdbId,
+                                tmdbOverride = linkData.tmdbId,
+                                isSeries = linkData.isSeries,
+                                seasonOverride = linkData.season,
+                                episodeOverride = linkData.episode,
+                                subtitleCallback = subtitleCallback,
+                                callback = callback
+                            )
+                        }
+                        iframeUrl.contains("embedmaster") || iframeUrl.contains("embdmstrplayer") -> {
+                            EmbedMasterExtractor().extractEmbedMaster(iframeUrl, referer, variant.label, subtitleCallback, callback)
+                        }
+                        else -> {
+                            if (!loadExtractor(iframeUrl, referer, subtitleCallback, callback)) {
+                                VideoParkExtractor().scrapeGenericEmbedPage(iframeUrl, referer, variant.label, subtitleCallback, callback)
+                            }
                         }
                     }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logError(e)
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                logError(e)
             }
         }
     }
 }
 
 /**
- * VideoParkExtractor - Paralel (argamap) ve Dizi/Film Tam Uyumlu
+ * VideoParkExtractor - Paralel (parallelMap) ve Dizi/Film Tam Uyumlu
  */
 open class VideoParkExtractor : ExtractorApi() {
     override val name = "VideoPark"
@@ -573,7 +606,6 @@ open class VideoParkExtractor : ExtractorApi() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        // Eğer imdbOverride zaten biliniyorsa gereksiz yere embed HTML'ini indirme, doğrudan API'ye git!
         var imdbId = imdbOverride ?: Regex("""(tt\d+)""").find(url)?.groupValues?.get(1)
         var initType: String? = null
         var initSeason: String? = null
@@ -593,7 +625,7 @@ open class VideoParkExtractor : ExtractorApi() {
             initEpisode = match?.groupValues?.get(4)?.trim()?.trim('\'', '"')?.takeIf { it != "null" && it.isNotBlank() }
         }
 
-        if (imdbId.isNullOrBlank()) return false
+        val resolvedImdbId = imdbId?.takeIf { it.isNotBlank() } ?: return false
 
         val mediaType = when {
             isSeries -> "tv"
@@ -608,7 +640,7 @@ open class VideoParkExtractor : ExtractorApi() {
         val origin = if (uri.scheme != null && uri.host != null) "${uri.scheme}://${uri.host}" else mainUrl
         val dilParam = Regex("""[?&]dil=([^&#]+)""").find(url)?.groupValues?.get(1)
 
-        val queryParams = mutableListOf("imdb=${URLEncoder.encode(imdbId, "UTF-8")}")
+        val queryParams = mutableListOf("imdb=${URLEncoder.encode(resolvedImdbId, "UTF-8")}")
         if (mediaType == "tv") {
             queryParams.add("type=tv")
             if (seasonArg != null) queryParams.add("season=${URLEncoder.encode(seasonArg, "UTF-8")}")
@@ -637,7 +669,6 @@ open class VideoParkExtractor : ExtractorApi() {
         val parsed = tryParseJson<JetEmbedApiResponse>(apiJsonText)
         val allSources = parsed?.sources?.sortedByDescending { it.priorityScore ?: 0 }.orEmpty()
 
-        // HIZ OPTİMİZASYONU: Yalnızca hızlı ve gerçek video döndüren kaynakları filtrele veya ilk 5 kaynağı paralel çalıştır
         val priorityNames = listOf("embedmaster", "vidrock", "vidfast", "peachify", "vidlink", "videasy", "moviesapi")
         val filteredSources = allSources.filter { src ->
             val n = src.name?.lowercase().orEmpty()
@@ -645,34 +676,35 @@ open class VideoParkExtractor : ExtractorApi() {
             priorityNames.any { n.contains(it) || u.contains(it) }
         }.ifEmpty { allSources.take(5) }
 
-        // PARALEL ÇALIŞTIRMA: Sırayla beklemek yerine tüm kaynakları aynı anda çöz
-        filteredSources.argamap { src ->
-            val rawTargetUrl = src.url?.trim()?.takeIf { it.isNotBlank() } ?: return@argamap
-            val targetUrl = if (mediaType == "tv" && seasonArg != null && episodeArg != null) {
-                adaptEmbedUrlForSeries(rawTargetUrl, imdbId, tmdbOverride, seasonArg, episodeArg)
-            } else {
-                rawTargetUrl
-            }
+        filteredSources.parallelMap { src: JetEmbedSource ->
+            val rawTargetUrl = src.url?.trim()?.takeIf { it.isNotBlank() }
+            if (rawTargetUrl != null) {
+                val targetUrl = if (mediaType == "tv" && seasonArg != null && episodeArg != null) {
+                    adaptEmbedUrlForSeries(rawTargetUrl, resolvedImdbId, tmdbOverride, seasonArg, episodeArg)
+                } else {
+                    rawTargetUrl
+                }
 
-            val sourceLabel = "$labelPrefix [${src.name ?: "Kaynak"}]"
-            try {
-                when {
-                    targetUrl.contains("embedmaster") || targetUrl.contains("embdmstrplayer") -> {
-                        EmbedMasterExtractor().extractEmbedMaster(targetUrl, url, sourceLabel, subtitleCallback, callback)
-                    }
-                    targetUrl.contains("vidrock.net") -> {
-                        VidRockExtractor().extractVidRock(targetUrl, url, sourceLabel, subtitleCallback, callback)
-                    }
-                    else -> {
-                        if (!loadExtractor(targetUrl, url, subtitleCallback, callback)) {
-                            scrapeGenericEmbedPage(targetUrl, url, sourceLabel, subtitleCallback, callback)
+                val sourceLabel = "$labelPrefix [${src.name ?: "Kaynak"}]"
+                try {
+                    when {
+                        targetUrl.contains("embedmaster") || targetUrl.contains("embdmstrplayer") -> {
+                            EmbedMasterExtractor().extractEmbedMaster(targetUrl, url, sourceLabel, subtitleCallback, callback)
+                        }
+                        targetUrl.contains("vidrock.net") -> {
+                            VidRockExtractor().extractVidRock(targetUrl, url, sourceLabel, subtitleCallback, callback)
+                        }
+                        else -> {
+                            if (!loadExtractor(targetUrl, url, subtitleCallback, callback)) {
+                                scrapeGenericEmbedPage(targetUrl, url, sourceLabel, subtitleCallback, callback)
+                            }
                         }
                     }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logError(e)
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                logError(e)
             }
         }
 
@@ -723,7 +755,8 @@ open class VideoParkExtractor : ExtractorApi() {
             }
         }
 
-        val nestedIframes = resp.document.select("iframe[src], iframe[data-src]")
+        val doc: Document = resp.document
+        val nestedIframes = doc.select("iframe[src], iframe[data-src]")
             .mapNotNull { resolveUrlNull(embedUrl, it.attr("src").ifBlank { it.attr("data-src") }) }
             .filterNot { it.contains("youtube.com") || it == embedUrl }
             .distinct()
@@ -791,7 +824,6 @@ open class VideoParkExtractor : ExtractorApi() {
 
 /**
  * EmbedMasterExtractor (embedmaster.link & embdmstrplayer.com)
- * JetFilmizle'deki Türkçe Dublaj ve Altyazılı dizi/filmlerin ana oynatıcısı!
  */
 class EmbdMstrPlayerExtractor : EmbedMasterExtractor() {
     override val name = "EmbdMstrPlayer"
@@ -824,10 +856,16 @@ open class EmbedMasterExtractor : ExtractorApi() {
         var resp = app.get(currentUrl, referer = referer)
         var body = resp.text
 
-        // 1. Katman: embedmaster.link içinden embdmstrplayer.com iframe'ine geçiş
-        val innerIframe = resp.document.selectFirst("iframe[src], iframe[data-src]")?.let {
-            resolveUrlNull(currentUrl, it.attr("src").ifBlank { it.attr("data-src") })
+        // jspecify Nullable hatasını önlemek için Element? tipi açıkça belirtildi
+        val doc: Document = resp.document
+        val iframeEl: Element? = doc.selectFirst("iframe[src], iframe[data-src]")
+        val rawSrc = if (iframeEl != null) {
+            iframeEl.attr("src").ifBlank { iframeEl.attr("data-src") }
+        } else {
+            ""
         }
+        val innerIframe = resolveUrlNull(currentUrl, rawSrc)
+
         if (!innerIframe.isNullOrBlank() && innerIframe != currentUrl) {
             val prevUrl = currentUrl
             currentUrl = innerIframe
@@ -838,7 +876,6 @@ open class EmbedMasterExtractor : ExtractorApi() {
         val uri = URI(currentUrl)
         val origin = "${uri.scheme}://${uri.host}"
 
-        // 2. Doğrudan veya Unpack edilmiş metinden linkleri ayıkla
         if (VideoParkExtractor().parseLinksFromRawText(body, "$origin/", label, subtitleCallback, callback)) {
             found = true
         }
@@ -849,7 +886,6 @@ open class EmbedMasterExtractor : ExtractorApi() {
             }
         }
 
-        // 3. FirePlayer / getVideo API kontrolü (/player/index.php?data=...&do=getVideo)
         val fireHash = Regex("""FirePlayer\s*\(\s*["']([a-fA-F0-9]{16,64})["']""").find(body)?.groupValues?.get(1)
             ?: Regex("""/player/index\.php\?data=([a-fA-F0-9]{16,64})""").find(body)?.groupValues?.get(1)
             ?: Regex("""/video/([a-fA-F0-9]{16,64})""").find(currentUrl)?.groupValues?.get(1)
