@@ -248,22 +248,23 @@
         "name": "InatBox"
     },
     {
-        "iconUrl": "https://www.google.com/s2/favicons?domain=https://jetfilmizle.de&sz=%size%",
-        "fileHash": "sha256-fde668f9f0ab5ad0fb2c0f22756f3a7863dd6a00b9d0823d352552128f90fbcf",
+        "iconUrl": "https://www.google.com/s2/favicons?domain=jetfilmizle.app&sz=%size%",
+        "fileHash": "sha256-fd1a2c592b38278257e41c725985edd9014e2f0be48f4477368f41560bec63c0",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/ishakfdn3-ship-it/cloudstream-Deneme-",
-        "fileSize": 37096,
+        "fileSize": 44916,
         "status": 1,
         "language": "tr",
         "authors": [
-            "keyiflerolsun"
+            "Kullanici"
         ],
         "tvTypes": [
-            "Movie"
+            "Movie",
+            "TvSeries"
         ],
-        "version": 19,
+        "version": 2,
         "internalName": "JetFilmizle",
-        "description": "Binlerce Film \u0130zleme Se\u00e7ene\u011fiyle En \u0130yi Film \u0130zleme Sitesi",
+        "description": "JetFilmizle - Film ve Dizi \u0130zleme Eklentisi",
         "url": "https://raw.githubusercontent.com/ishakfdn3-ship-it/cloudstream-Deneme-/builds/JetFilmizle.cs3",
         "name": "JetFilmizle"
     },
