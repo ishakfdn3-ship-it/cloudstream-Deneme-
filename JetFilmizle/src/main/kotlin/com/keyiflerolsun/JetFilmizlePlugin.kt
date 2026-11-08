@@ -9,6 +9,8 @@ class JetFilmizlePlugin : Plugin() {
     override fun load(context: Context) {
         registerMainAPI(JetFilmizle())
         registerExtractorAPI(VideoParkExtractor())
+        registerExtractorAPI(EmbedMasterExtractor())
+        registerExtractorAPI(EmbdMstrPlayerExtractor())
         registerExtractorAPI(VidRockExtractor())
     }
 }
