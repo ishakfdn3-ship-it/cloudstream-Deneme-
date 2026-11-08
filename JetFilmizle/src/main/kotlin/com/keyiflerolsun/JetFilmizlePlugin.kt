@@ -568,7 +568,7 @@ class JetFilmizle : MainAPI() {
         label: String,
         callback: (ExtractorLink) -> Unit
     ) {
-        val isM3u8 = url.contains(".m3u8", ignoreCase_ = true) // Wait, ignoreCase argument is lowercase ignoreCase
+        val isM3u8 = url.contains(".m3u8", ignoreCase = true) // Wait, ignoreCase argument is lowercase ignoreCase
         val linkType = if (isM3u8) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
         callback(
             newExtractorLink(
