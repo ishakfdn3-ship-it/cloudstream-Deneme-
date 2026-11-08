@@ -271,10 +271,16 @@ class YabanciDiziIzle : MainAPI() {
                     .forEach { embeds.add(it) }
 
                 doc.select("[data-embed]").forEach { el ->
-                    val rawEmbed = el.attr("data-embed")
-                    Regex("""src=["']([^"']+)["']""").find(rawEmbed)?.groupValues?.getOrNull(1)?.let { s ->
-                        fixUrlNull(s)?.let { embeds.add(it) }
+                    val rawEmbed = el.attr("data-embed").trim()
+                    if (rawEmbed.startsWith("http") || rawEmbed.startsWith("//")) {
+                        fixUrlNull(rawEmbed)?.let { embeds.add(it) }
                     }
+                    // iframe HTML'i içindeki tüm src / data-src / data-litespeed-src değerleri (about:blank'ı atla)
+                    Regex("""(?:data-litespeed-src|data-lazy-src|data-src|src)\s*=\s*["']([^"']+)["']""")
+                        .findAll(rawEmbed)
+                        .map { it.groupValues[1].trim() }
+                        .filter { it.startsWith("http") || it.startsWith("//") }
+                        .forEach { s -> fixUrlNull(s)?.let { embeds.add(it) } }
                 }
 
                 // JS/script içine gömülmüş embed adreslerini ham HTML'den de yakala (iframe DOM'da yoksa)
@@ -292,6 +298,8 @@ class YabanciDiziIzle : MainAPI() {
                     try {
                         if (embed.contains("dzen.ru/embed/")) {
                             DzenRuExtractor().getUrl(embed, pageUrl, subtitleCallback, wrappedCallback)
+                        } else if (embed.contains("my.mail.ru")) {
+                            MailRuExtractor().getUrl(embed, pageUrl, subtitleCallback, wrappedCallback)
                         } else {
                             loadExtractor(embed, pageUrl, subtitleCallback, wrappedCallback)
                         }
